@@ -35,44 +35,43 @@ def main(
             model_type, num_node * num_gpu_per_node
         )
 
-    processes = []
+    processes: list[Process] = []
     # Add a multiproc shared dict
     with Manager() as manager:
         result = manager.dict()
-        pbar = tqdm(enumerate(configs), total=len(configs))
-        for pid, config in pbar:
-            proc = Process(
-                target=run_binary_search,
-                args=(
-                    model_type, config,
-                    backend, attainment,
-                ),
-                kwargs=dict(
-                    max_per_gpu_rate=max_per_gpu_rate,
-                    pid=pid, esp=esp,
-                    N=N, result=result,
-                    debug=True,
+        with tqdm(total=len(configs)) as pbar:
+            for pid, config in enumerate(configs):
+                proc = Process(
+                    target=run_binary_search,
+                    args=(
+                        model_type, config,
+                        backend, attainment,
+                    ),
+                    kwargs=dict(
+                        max_per_gpu_rate=max_per_gpu_rate,
+                        pid=pid, esp=esp,
+                        N=N, result=result,
+                        debug=True,
+                    )
                 )
-            )
-            if len(processes) >= max_cpu_count:
-                # Pop a process that has finished running
-                found = False
-                while not found:
-                    for i in range(len(processes)):
-                        if not processes[i].is_alive():
-                            processes[i].join()
-                            processes.pop(i)
-                            found = True
-                            pbar.update(1)
-                            break
-                    sleep(0.2)
+                if len(processes) >= max_cpu_count:
+                    # Pop a process that has finished running
+                    found = False
+                    while not found:
+                        for p in processes.copy():
+                            if not p.is_alive():
+                                p.join()
+                                processes.remove(p)
+                                found = True
+                                pbar.update(1)
+                        sleep(0.2)
 
-            proc.start()
-            processes.append(proc)
-            pass
-        for proc in processes:
-            pbar.update(1)
-            proc.join()
+                proc.start()
+                processes.append(proc)
+                pass
+            for proc in processes:
+                pbar.update(1)
+                proc.join()
         result = dict(result)
         return result
 

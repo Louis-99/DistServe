@@ -3,6 +3,8 @@ import argparse
 from simdistserve.benchmarks.parallel_bisect import simulate_bisect_search
 from simdistserve.constants import ModelTypes
 
+from simdistserve.envs import SKIP_DECODE, SKIP_PREFILL
+
 
 def parse_args():
     parser = argparse.ArgumentParser("Simulate DistServe or vLLM to find the optimal configuration.")
@@ -27,11 +29,16 @@ def parse_args():
                         help="Stopping criteria: `high - low < esp` (default esp = 0.25)")
     parser.add_argument("--N", type=int, default=300,
                         help="Number of samples to simulate (default 1000)")
+    # TODO: (Yunzhao) add new model type
     parser.add_argument("--model-type", type=str, default="opt_13b",
-                        help="Model type to simulate (opt_13b, opt_66b, opt_175b)")
+                        help="Model type to simulate (opt_13b, opt_66b, opt_175b, llama3_8b, qwen2_14b, phi4, gemma2_27b)")
 
     args = parser.parse_args()
     args.model_type = ModelTypes.model_str_to_object(args.model_type)
+    if SKIP_DECODE:
+        args.decode_target = int(1e9)
+    if SKIP_PREFILL:
+        args.prefill_target = int(1e9)
     return args
 
 
@@ -42,8 +49,8 @@ def find_best_config(config_to_best_per_gpu_rate, backend):
     num_gpu = 0
     for config, per_gpu_rate in config_to_best_per_gpu_rate.items():
         if backend == 'distserve':
-            pp_cross, tp_prefill, pp_prefill, tp_decode, pp_decode = config
-            num_gpu = pp_cross * (tp_prefill * pp_prefill + tp_decode * pp_decode)
+            pp_cross, tp_prefill, pp_prefill, tp_decode, pp_decode, n_prefill, n_decode = config
+            num_gpu = pp_cross * (tp_prefill * pp_prefill * n_prefill + tp_decode * pp_decode * n_decode)
         elif backend == 'vllm':
             tp, pp = config
             num_gpu = tp * pp
@@ -84,15 +91,15 @@ if __name__ == '__main__':
         esp=args.esp,
         N=args.N,
     )
-    # print(result)
+    print(result)
 
     best_config, best_per_gpu_rate = find_best_config(result, args.backend)
     if args.backend == "distserve":
-        pp_cross, tp_prefill, pp_prefill, tp_decode, pp_decode = best_config
+        pp_cross, tp_prefill, pp_prefill, tp_decode, pp_decode, n_prefill, n_decode = best_config
         print(f"Best per GPU rate: {best_per_gpu_rate:.2f}")
         print(f"Best config: pp_cross={pp_cross}, "
               f"tp_prefill={tp_prefill}, pp_prefill={pp_prefill}, "
-              f"tp_decode={tp_decode}, pp_decode={pp_decode}")
+              f"tp_decode={tp_decode}, pp_decode={pp_decode}, {n_prefill=}, {n_decode=}")
     elif args.backend == "vllm":
         tp, pp = best_config
         print(f"Best per GPU rate: {best_per_gpu_rate:.2f}")

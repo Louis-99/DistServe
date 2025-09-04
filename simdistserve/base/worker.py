@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from simdistserve.base.scheduler import Scheduler
     from simdistserve.base.request import Request
 
+from simdistserve.envs import SKIP_PREFILL, SKIP_DECODE
 
 # TODO: (Refactor) Make this a configuration.
 class WorkerConfig(TypedDict):
@@ -187,8 +188,9 @@ class Worker:
         # Acceptable decode requests is capped by the remaining allowed tokens in this batch.
         # TODO: Hack: Must revert this to use the max token given
         # watermark = 0.9
-        # decode_max_tokens = self.decode_max_tokens * watermark
-        decode_max_tokens = 50000
+        watermark = 1.0 # fixed by yunzhao
+        decode_max_tokens = self.decode_max_tokens * watermark # fixed by yunzhao
+        # decode_max_tokens = 50000 # fixed by yunzhao
         _decode_len = min(remaining_tok_in_batch, len(self.decode_queue))
         decode_reqs = []
         for i in range(_decode_len):
@@ -308,21 +310,24 @@ class Worker:
             decode_len_list=[x.current_context_len for x in decode_reqs],
         )
 
-        # Get prefill time wrt total number of tokens.
-        delay = get_prefill_time(
-            num_tokens,
-            bs=len(prefill_items),
-            decode_bs=len(decode_reqs),
-            pp=self.cluster.PP_prefill,
-            model_type=self.model_type, TP=self.TP_Prefill,
-            prefill_len_list=[x.current_prefill_lens for x in prefill_items],
-            engine_type=self.engine_type,
-            # __prefill_reqs=prefill_items,
-            # __decode_reqs=decode_reqs,
-        )
-        num_tokens = sum(x.current_context_len for x in (prefill_items + decode_reqs))
-        if self.is_first_in_pipeline:
-            delay += self.add_ray_overhead(num_tokens)
+        if not SKIP_PREFILL:
+            # Get prefill time wrt total number of tokens.
+            delay = get_prefill_time(
+                num_tokens,
+                bs=len(prefill_items),
+                decode_bs=len(decode_reqs),
+                pp=self.cluster.PP_prefill,
+                model_type=self.model_type, TP=self.TP_Prefill,
+                prefill_len_list=[x.current_prefill_lens for x in prefill_items],
+                engine_type=self.engine_type,
+                # __prefill_reqs=prefill_items,
+                # __decode_reqs=decode_reqs,
+            )
+            num_tokens = sum(x.current_context_len for x in (prefill_items + decode_reqs))
+            if self.is_first_in_pipeline:
+                delay += self.add_ray_overhead(num_tokens)
+        else:
+            delay = 0
         # Set the number of prefills in progress such that the scheduler get proper information about the worker.
         self._prefill_ips = len(prefill_items)
         yield self.env.timeout(delay)
@@ -339,13 +344,16 @@ class Worker:
             decode_len_list=[x.current_context_len for x in decode_reqs],
         )
         _token_generated_list = [x.current_context_len + 1 for x in decode_reqs]
-        delay = get_decode_time(batch_size, pp=self.cluster.PP_decode,
-                                model_type=self.model_type, TP=self.TP_Decode,
-                                token_generated_list=_token_generated_list,
-                                engine_type=self.engine_type, )
-        num_tokens = sum(x.current_context_len for x in decode_reqs)
-        if self.is_first_in_pipeline:
-            delay += self.add_ray_overhead(num_tokens)
+        if not SKIP_DECODE:
+            delay = get_decode_time(batch_size, pp=self.cluster.PP_decode,
+                                    model_type=self.model_type, TP=self.TP_Decode,
+                                    token_generated_list=_token_generated_list,
+                                    engine_type=self.engine_type, )
+            num_tokens = sum(x.current_context_len for x in decode_reqs)
+            if self.is_first_in_pipeline:
+                delay += self.add_ray_overhead(num_tokens)
+        else:
+            delay = 0
         yield self.env.timeout(delay)
         self._exit_decode(decode_reqs)
         return

@@ -3,6 +3,7 @@ from itertools import product
 from simdistserve.constants import ModelTypes
 from simdistserve.estimators.memory_estimator import get_model_possible_tp, get_model_possible_pp
 
+from simdistserve.envs import SKIP_DECODE, SKIP_PREFILL
 
 def get_distserve_configs(
     model_type: ModelTypes,
@@ -38,6 +39,8 @@ def get_distserve_configs(
         cpps = [i for i in possible_pps if i <= num_node]
         pass
 
+    exist_configs_for_skip = set()
+
     # Get all possible configs
     possible_configs = []
     for pp_cross, tp_prefill, pp_prefill, tp_decode, pp_decode in product(cpps, tps, pps, tps, pps):
@@ -53,7 +56,30 @@ def get_distserve_configs(
         if pp_cross * pp_decode not in possible_pps:
             continue
 
-        possible_configs.append((pp_cross, tp_prefill, pp_prefill, tp_decode, pp_decode))
+        if is_high_affinity:
+            assert pp_cross == 1
+            gpu_per_prefill = tp_prefill * pp_prefill
+            gpu_per_decode = tp_decode * pp_decode
+            max_instance_cnt = total_num_gpus // min(gpu_per_decode, gpu_per_prefill)
+            if SKIP_PREFILL or SKIP_DECODE:
+                max_instance_cnt = 2 # one for decode and one for prefill (cannot be 1 because of code below)
+            for n_prefill in range(1, max_instance_cnt): # = max_instance_cnt is not possible
+                for n_decode in range(1, max_instance_cnt): # = max_instance_cnt is not possible
+                    if n_prefill * gpu_per_prefill + n_decode * gpu_per_decode > total_num_gpus:
+                        break
+                    if SKIP_DECODE or SKIP_PREFILL:
+                        if SKIP_DECODE:
+                            cur_config = (tp_prefill, pp_prefill)
+                        else: # SKIP_PREFIL
+                            cur_config = (tp_decode, pp_decode)
+                        if cur_config in exist_configs_for_skip:
+                            continue
+                        else:
+                            exist_configs_for_skip.add(cur_config)
+                    possible_configs.append((pp_cross, tp_prefill, pp_prefill, tp_decode, pp_decode, n_prefill, n_decode))
+
+        else:
+            possible_configs.append((pp_cross, tp_prefill, pp_prefill, tp_decode, pp_decode))
         pass
     return possible_configs
 

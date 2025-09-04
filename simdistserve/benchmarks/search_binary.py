@@ -3,6 +3,8 @@ import time
 from simdistserve.benchmarks.simulate_dist import run_experiment, parse_args
 from simdistserve.constants import ModelTypes
 
+from simdistserve.envs import SKIP_DECODE, SKIP_PREFILL
+
 
 def run_binary_search(
     model_type: ModelTypes,
@@ -25,14 +27,33 @@ def run_binary_search(
     # make config args
     #
     if backend == 'distserve':
-        (pp_cross, tp_prefill, pp_prefill, tp_decode, pp_decode) = config
-        num_gpu = pp_cross * (tp_prefill * pp_prefill + tp_decode * pp_decode)
-        config_args = [
-            '--tp-prefill', f'{tp_prefill}',
-            '--pp-prefill', f'{pp_cross * pp_prefill}',
-            '--tp-decode', f'{tp_decode}',
-            '--pp-decode', f'{pp_cross * pp_decode}',
-        ]
+        assert len(config) == 5 or len(config) == 7
+        if len(config) == 5:
+            (pp_cross, tp_prefill, pp_prefill, tp_decode, pp_decode) = config
+            num_gpu = pp_cross * (tp_prefill * pp_prefill + tp_decode * pp_decode)
+            config_args = [
+                '--tp-prefill', f'{tp_prefill}',
+                '--pp-prefill', f'{pp_cross * pp_prefill}',
+                '--tp-decode', f'{tp_decode}',
+                '--pp-decode', f'{pp_cross * pp_decode}',
+            ]
+        elif len(config) == 7:
+            (pp_cross, tp_prefill, pp_prefill, tp_decode, pp_decode, n_prefill, n_decode) = config
+            num_gpu = pp_cross * (tp_prefill * pp_prefill * n_prefill + tp_decode * pp_decode * n_decode)
+            config_args = [
+                '--tp-prefill', f'{tp_prefill}',
+                '--pp-prefill', f'{pp_cross * pp_prefill}',
+                '--tp-decode', f'{tp_decode}',
+                '--pp-decode', f'{pp_cross * pp_decode}',
+                '--n-prefill', f'{n_prefill}',
+                '--n-decode', f'{n_decode}',
+            ]
+
+        assert not (SKIP_DECODE and SKIP_PREFILL)
+        if SKIP_DECODE: # prefill only
+            num_gpu = pp_cross * pp_prefill * tp_prefill
+        elif SKIP_PREFILL: # decode only
+            num_gpu = pp_cross * pp_decode * tp_decode
     else:
         (tp, pp) = config
         num_gpu = tp * pp
@@ -82,11 +103,11 @@ def run_binary_search(
             end_time = time.time()
             time_durations.append((config, this_rate, end_time - start_time))
         except Exception as e:
-            import traceback
-            print(
-                f"({pid=}) Error when computing {config=}. This may not be a real error "
-                f"(e.g. bad parallelism strategy). Exception detail: {traceback.format_exc()}."
-            )
+            # import traceback
+            # print(
+            #     f"({pid=}) Error when computing {config=}. This may not be a real error "
+            #     f"(e.g. bad parallelism strategy). Exception detail: {traceback.format_exc()}."
+            # )
             return None
 
         # Update the range

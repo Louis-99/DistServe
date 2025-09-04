@@ -39,12 +39,16 @@ def get_max_num_tokens(model: ModelTypes, tp: int, pp: int) -> int:
     max_num_tokens = max_num_tokens_data[model][(tp, pp)]
     return max_num_tokens
 
-
+# TODO: (Yunzhao) change
 model_hyperparams = {
     # model: (layers, heads)
     "facebook/opt-13b": (40, 40),
     "facebook/opt-66b": (64, 72),
     "facebook/opt-175b": (96, 96),
+    "meta-llama/Llama-3.1-8B": (32, 8),
+    "Qwen/Qwen2.5-14B-Instruct": (48, 40),
+    "microsoft/phi-4": (40, 10),
+    "google/gemma-2-27b": (46, 16),
 }
 
 

@@ -28,6 +28,8 @@ from simdistserve.clusters.vllm import VLLMCluster
 from simdistserve.constants import ModelTypes
 from simdistserve.estimators.memory_estimator import get_max_num_tokens, is_model_runnable
 
+from simdistserve.envs import SKIP_DECODE, SKIP_PREFILL
+
 
 def parse_args(args_=None):
     parser = argparse.ArgumentParser(description='Simulation: vLLM, DistServe')
@@ -79,6 +81,9 @@ def parse_args(args_=None):
                         help='Target latency for decode')
     parser.add_argument('--verbose', action='store_true', default=False,
                         help='Print verbose output')
+    parser.add_argument('--n-decode', type=int, default=1)
+    parser.add_argument('--n-prefill', type=int, default=1)
+
 
     args = parser.parse_args(args=args_)
 
@@ -145,18 +150,32 @@ def main(args, outputs=None):
     PP_prefill = args.pp_prefill
     TP_Decode = args.tp_decode
     PP_decode = args.pp_decode
+    N_Prefill = args.n_prefill
+    N_Decode = args.n_decode
 
     #
     # Handle vllm in data processing
     #
-    if not is_model_runnable(model_type, TP_Prefill, PP_prefill):
+    if not SKIP_PREFILL and not is_model_runnable(model_type, TP_Prefill, PP_prefill):
         raise ValueError(
             f"Model {model_type} is not runnable with TP={TP_Prefill}, PP={PP_prefill}. "
             f"Skipping by throwing exception..."
         )
-
-    prefill_max_tokens = get_max_num_tokens(model_type, TP_Prefill, PP_prefill)
-    if args.backend == 'vllm':
+    
+    if not SKIP_DECODE and not is_model_runnable(model_type, TP_Decode, PP_decode):
+        raise ValueError(
+            f"Model {model_type} is not runnable with TP={TP_Prefill}, PP={PP_prefill}. "
+            f"Skipping by throwing exception..."
+        )
+    
+    if SKIP_PREFILL:
+        prefill_max_tokens = int(1e9)
+    else:
+        prefill_max_tokens = get_max_num_tokens(model_type, TP_Prefill, PP_prefill)
+    
+    if SKIP_DECODE:
+        decode_max_tokens = int(1e9)
+    elif args.backend == 'vllm':
         TP_Decode = PP_decode = 0
         decode_max_tokens = prefill_max_tokens
         pass
@@ -197,6 +216,7 @@ def main(args, outputs=None):
 
         cluster = DisaggCluster(
             env=env, PP_prefill=PP_prefill, PP_decode=PP_decode,
+            N_prefill_instance=N_Prefill, N_decode_instance=N_Decode,
             worker_configs=worker_config,
         )
     else:
