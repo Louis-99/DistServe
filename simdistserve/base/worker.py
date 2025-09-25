@@ -7,7 +7,8 @@ from collections import deque
 from typing import Optional, List, Iterable, TYPE_CHECKING, Union, TypedDict, Literal
 from uuid import UUID
 
-from simdistserve.estimators.time_estimator import get_prefill_time, get_decode_time
+# from simdistserve.estimators.time_estimator import get_prefill_time, get_decode_time
+from simdistserve.estimators.time_estimator import get_decode_time_tree, get_prefill_time_tree
 
 if TYPE_CHECKING:
     from simdistserve.base.scheduler import Scheduler
@@ -109,10 +110,14 @@ class Worker:
     def is_first_in_pipeline(self):
         return self.pipe_rank == 0
 
-    @property
-    def has_back_pressure(self) -> bool:
-        threshold = int(self.decode_max_batch_size * self.decode_back_pressure)
-        return sum(r.current_context_len for r in self.decode_queue) > threshold
+    # @property
+    # def has_back_pressure(self) -> bool:
+    #     total_cacpacity = self.decode_max_tokens
+    #     threshold = total_cacpacity - self.min_free_tokens_for_KV_transfer
+    #     current_tokens = self.current_decode_tokens
+        
+    #     # threshold = int(self.decode_max_batch_size * self.decode_back_pressure)
+    #     return sum(r.current_context_len for r in self.decode_queue) > threshold
 
     def __repr__(self):
         return f"Worker {self.wid}"
@@ -132,8 +137,8 @@ class Worker:
         while True:
             if not (self.prefill_queue or self.decode_queue):
                 yield self._wakeup_event
-
-            if self.prefill_queue and not self.has_back_pressure:
+            
+            if self.prefill_queue:
                 yield from self.do_prefill()
             else:
                 yield from self.do_decode()
@@ -144,10 +149,11 @@ class Worker:
         pass
 
     def add_ray_overhead(self, sum_of_tokens) -> int:
-        base_overhead = 2
-        k = 0.0001
-        delay = base_overhead + sum_of_tokens * k
-        return delay
+        # base_overhead = 2
+        # k = 0.0001
+        # delay = base_overhead + sum_of_tokens * k
+        # return delay
+        return 0
 
     # run = run_with_schedule_delay
 
@@ -193,12 +199,35 @@ class Worker:
         # decode_max_tokens = 50000 # fixed by yunzhao
         _decode_len = min(remaining_tok_in_batch, len(self.decode_queue))
         decode_reqs = []
+        decode_queue_index = 0
         for i in range(_decode_len):
-            req = self.decode_queue[0]
+            req = self.decode_queue[decode_queue_index]
+            # check state of req
+            # if state is prefilled, then start KV transfer, change status to inflight, 
+            # but dont schedule
+            if req.state == 'prefilled':
+                # if enough space, then start KV transfer
+                if (req.current_context_len) > decode_max_tokens:
+                    decode_queue_index += 1
+                    continue
+                else:
+                    req.start_KV_transfer(self.env.now)
+                    # add tokens, but dont schedule
+                    decode_max_tokens -= (req.current_context_len + 1)
+                    decode_queue_index += 1
+                    continue
+            if req.check_KV_finished(self.env.now) is False:
+                decode_queue_index += 1
+                continue
+
+            # at this point only normal decode requests are left
             if (req.current_context_len + 1) > decode_max_tokens:
                 break
             decode_max_tokens -= (req.current_context_len + 1)
-            decode_reqs.append(self.decode_queue.popleft())
+            decode_reqs.append(req)
+            self.decode_queue.remove(req)
+            if decode_queue_index >= len(self.decode_queue):
+                break
         for r in decode_reqs:
             r.do_decode(wid=self.wid)
         return decode_reqs
@@ -206,6 +235,7 @@ class Worker:
     def _enter_prefill(self) -> 'List[Request]':
         result: 'List[Request]' = []
 
+        
         # Limit the maximum prefill requests to handle.
         max_request_size = min(self.prefill_max_batch_size, len(self.prefill_queue))
 
@@ -257,6 +287,7 @@ class Worker:
                 candidate.chunk_id = chunk_id
                 chunk_size += sched_size
                 assert candidate.remain_prefill_lens >= 0
+
                 result.append(self.prefill_queue.popleft())
                 pass
         for i in result:
@@ -267,6 +298,7 @@ class Worker:
         for item in prefill_items:
             next_wid = self.next_worker.wid if self.next_worker else None
             item.finish_prefill(is_finished_one_round=self.is_last_in_pipeline, wid=self.wid, next_wid=next_wid)
+            item.state = "prefilled"  #omar
             if not self.is_last_in_pipeline or (item.remain_prefill_lens > 0):
                 # Finish one chunk of prefill. Now forward to the next worker
                 # (or head of worker) to do the rest of the parts.
@@ -312,7 +344,7 @@ class Worker:
 
         if not SKIP_PREFILL:
             # Get prefill time wrt total number of tokens.
-            delay = get_prefill_time(
+            delay = get_prefill_time_tree(
                 num_tokens,
                 bs=len(prefill_items),
                 decode_bs=len(decode_reqs),
@@ -345,7 +377,7 @@ class Worker:
         )
         _token_generated_list = [x.current_context_len + 1 for x in decode_reqs]
         if not SKIP_DECODE:
-            delay = get_decode_time(batch_size, pp=self.cluster.PP_decode,
+            delay = get_decode_time_tree(batch_size, pp=self.cluster.PP_decode,
                                     model_type=self.model_type, TP=self.TP_Decode,
                                     token_generated_list=_token_generated_list,
                                     engine_type=self.engine_type, )

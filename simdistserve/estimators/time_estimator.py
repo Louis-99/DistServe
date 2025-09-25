@@ -1,9 +1,19 @@
 # Fit a model where prefill does not have an intercept, and decode does have one.
 import json
+import os
+import numpy as np
+import pandas as pd
 from pathlib import Path
 
 from simdistserve.constants import ModelTypes
 from simdistserve.envs import GPU_FREQ
+
+from lightgbm import LGBMRegressor
+from joblib import load
+import skl2onnx
+from skl2onnx import convert_sklearn
+from skl2onnx.common.data_types import FloatTensorType
+import onnxruntime as ort
 
 # TODO: (Yunzhao) add new data to json
 def load_distserve_profile_data():
@@ -30,12 +40,26 @@ def load_vllm_profile_data():
     with open(profile_data_path) as f:
         profile_data = json.load(f)
         return profile_data
+    
+def load_tree_models():
+    dec = None
+    pre = None
+    MODEL_DIR = Path(__file__).parent / "tree_models"
+    dec_path = MODEL_DIR / "decode_model.onnx"
+    pre_path = MODEL_DIR / "prefill_model.onnx"
+    if dec_path.exists():
+        dec = ort.InferenceSession(dec_path)
+    if pre_path.exists():
+        pre = ort.InferenceSession(pre_path)
+    return dec, pre
 
 
 distserve_profile_data: dict = load_distserve_profile_data()
 ours_profile_data: dict = load_our_profile_data()
 ours_freq_profile_data: dict = load_our_freq_profile_data()
 vllm_profile_data: dict = load_vllm_profile_data()
+
+dec_model, pre_model = load_tree_models()
 
 def get_coefs_from_param_with_thres(param, value_to_check):
     thres_list = param['thres']
@@ -45,6 +69,7 @@ def get_coefs_from_param_with_thres(param, value_to_check):
         if value_to_check <= thres:
             return coefs
     return coefs_list[-1]
+
 
 
 def get_prefill_time(num_tokens=None, pp=1, bs=1, decode_bs=0, model_type=ModelTypes.opt_13b, TP=1,
@@ -94,7 +119,10 @@ def get_prefill_time(num_tokens=None, pp=1, bs=1, decode_bs=0, model_type=ModelT
     sum_num_tokens_sqr = sum([x ** 2 for x in prefill_len_list])
     delay = a + b * num_total_tokens + c * sum_num_tokens_sqr
     delay = delay * pp_factor + pp_const
-    return delay
+    # input_df = pd.DataFrame([[bs, sum(prefill_len_list), TP, GPU_FREQ]],
+    #                         columns=["batch_size", "total_tokens", "tp_degree", "freq"])
+    # delay = prefill_lgbm_model.predict(input_df)[0]
+    return delay * 1000
 
 
 def get_decode_time(num_requests, pp=1, model_type=ModelTypes.opt_13b, TP=1, token_generated_list=None,
@@ -163,4 +191,47 @@ def get_decode_time(num_requests, pp=1, model_type=ModelTypes.opt_13b, TP=1, tok
     delay = a + b * num_total_tokens + c * batch_size
     delay = delay * pp_factor + pp_const
     delay *= f
-    return delay
+
+    # input_df = pd.DataFrame([[batch_size, sum(token_generated_list), TP, GPU_FREQ]],
+    #                         columns=["batch_size", "total_tokens", "tp_degree", "freq"])
+    # delay = decode_lgbm_model.predict(input_df)[0]
+    return delay * 1000
+
+
+def get_prefill_time_tree(num_tokens=None, pp=1, bs=1, decode_bs=0, model_type=ModelTypes.opt_13b, TP=1,
+                     prefill_len_list=None, engine_type="distserve", **kw):
+    if bs == 0: # for when no work being done
+        return 1
+    model_name = ModelTypes.formalize_model_name(model_type)
+    num_total_tokens = sum(prefill_len_list)
+    sum_num_tokens_sqr = sum([x ** 2 for x in prefill_len_list])
+    input_feed = {
+        "model": np.array([[model_name]], dtype=str),
+        "batch_size": np.array([[bs]], dtype=np.float32),
+        "input_len_sum": np.array([[num_total_tokens]], dtype=np.float32),
+        "input_len_mean": np.array([[num_total_tokens / bs]], dtype=np.float32),
+        "input_len_std": np.array([[(sum_num_tokens_sqr / len(prefill_len_list)) ** 0.5]], dtype=np.float32),
+        "tp_degree": np.array([[TP]], dtype=np.float32),
+        "freq_mhz": np.array([[GPU_FREQ]], dtype=np.float32),
+    }
+    delay = pre_model.run(None, input_feed)[0][0][0]
+    return delay * 1000
+
+def get_decode_time_tree(num_requests, pp=1, model_type=ModelTypes.opt_13b, TP=1, token_generated_list=None,
+                    engine_type="distserve", **kw):
+    batch_size = num_requests
+    if batch_size == 0: # for when no work being done
+        return 1
+    model_name = ModelTypes.formalize_model_name(model_type)
+    num_total_tokens = sum(token_generated_list)
+    input_feed = {
+        "model": np.array([[model_name]], dtype=str),
+        "batch_size": np.array([[batch_size]], dtype=np.float32),
+        "input_len_sum": np.array([[num_total_tokens]], dtype=np.float32),
+        "input_len_mean": np.array([[num_total_tokens / batch_size]], dtype=np.float32),
+        "input_len_std": np.array([[(sum([x ** 2 for x in token_generated_list]) / len(token_generated_list)) ** 0.5]], dtype=np.float32),
+        "tp_degree": np.array([[TP]], dtype=np.float32),
+        "freq_mhz": np.array([[GPU_FREQ]], dtype=np.float32),
+    }
+    delay = dec_model.run(None, input_feed)[0][0][0]
+    return delay * 1000

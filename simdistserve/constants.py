@@ -5,7 +5,7 @@ class ModelTypes:
     llama3_8b = 'Llama-3.1-8B'
     qwen2_14b = 'Qwen2.5-14B'
     phi4 = 'phi-4'
-    gemma2_27b = 'gemma-2-27b'
+    gemma2_27b = 'gemma-2-27b-it'
     # TODO: (Yunzhao) add new model type
 
     # TODO: (Yunzhao) add new model type
@@ -24,7 +24,7 @@ class ModelTypes:
         if x == ModelTypes.phi4:
             return 'microsoft/phi-4'
         if x == ModelTypes.gemma2_27b:
-            return 'google/gemma-2-27b'
+            return 'google/gemma-2-27b-it'
         raise ValueError(x)
 
     # TODO: (Yunzhao) add new model type
@@ -42,6 +42,6 @@ class ModelTypes:
             return ModelTypes.qwen2_14b
         if model == 'phi4' or model == 'microsoft/phi-4':
             return ModelTypes.phi4
-        if model == 'gemma2_27b' or model == 'google/gemma-2-27b':
+        if model == 'gemma2_27b' or model == 'google/gemma-2-27b-it':
             return ModelTypes.gemma2_27b
         raise ValueError(model)
