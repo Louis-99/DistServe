@@ -13,7 +13,7 @@ from simdistserve.constants import ModelTypes
 # Restrict runtime to <= 32 CPU core.
 # RunPod encounters problem when using `os.cpu_count()`
 # to query the number of CPUs
-MAX_CPU_COUNT = min(os.cpu_count() - 2, 32)
+MAX_CPU_COUNT = min(os.cpu_count() - 2, int(os.getenv('MAX_CPU_COUNT', 32)))
 
 
 def main(
