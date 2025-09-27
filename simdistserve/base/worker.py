@@ -180,7 +180,7 @@ class Worker:
             items = [items]
 
         if not to_scheduler:
-            self.next_worker.decode_queue.extend(items)
+            self.next_worker.decode_queue.extendleft(items)
             self.next_worker.wakeup()
             return
 
