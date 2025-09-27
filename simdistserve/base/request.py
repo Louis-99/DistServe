@@ -147,9 +147,9 @@ class Request:
         if self.state != 'inflight':
             return True
         #omar TODO currently hardcoded for Gemma-2-27B-it
-        KV_bytes = self.current_context_len * 0.0004 # tokens * GB/token
-        # transfer chunk set to 64k bytes
-        KV_bytes = math.ceil(KV_bytes*1024 / 64) * 64 / 1024
+        gb_per_token = 4e-4 # GB/token
+        # tokens are in page size of 64 TODO: currently hardcoded
+        KV_bytes = (self.current_context_len // 64 + 1) * 64 * gb_per_token # GB
         transfer_time = (KV_bytes / 9) * 1000 # ms, assuming 9 GiB/s network
         if (time - self.inflight_start) >= transfer_time: 
             self.state = 'decode'
