@@ -1,6 +1,9 @@
 """
 Request class for the simulation.
 """
+
+import math
+
 # Define the request *E_*vents
 E_INIT = "init"
 E_WAIT_PREFILL = "wait_prefill"
@@ -146,7 +149,7 @@ class Request:
         #omar TODO currently hardcoded for Gemma-2-27B-it
         KV_bytes = self.current_context_len * 0.0004 # tokens * GB/token
         # transfer chunk set to 64k bytes
-        KV_bytes = ((KV_bytes // 64) + 1) * 64
+        KV_bytes = math.ceil(KV_bytes*1024 / 64) * 64 / 1024
         transfer_time = (KV_bytes / 9) * 1000 # ms, assuming 9 GiB/s network
         if (time - self.inflight_start) >= transfer_time: 
             self.state = 'decode'
