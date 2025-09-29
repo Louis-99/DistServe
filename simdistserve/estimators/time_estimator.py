@@ -210,7 +210,7 @@ def get_prefill_time_tree(num_tokens=None, pp=1, bs=1, decode_bs=0, model_type=M
         "batch_size": np.array([[bs]], dtype=np.float32),
         "input_len_sum": np.array([[num_total_tokens]], dtype=np.float32),
         "input_len_mean": np.array([[num_total_tokens / bs]], dtype=np.float32),
-        "input_len_std": np.array([[(sum_num_tokens_sqr / len(prefill_len_list)) ** 0.5]], dtype=np.float32),
+        "input_len_std": np.array([[np.std(prefill_len_list)]], dtype=np.float32),
         "tp_degree": np.array([[TP]], dtype=np.float32),
         "freq_mhz": np.array([[GPU_FREQ]], dtype=np.float32),
     }
@@ -229,9 +229,16 @@ def get_decode_time_tree(num_requests, pp=1, model_type=ModelTypes.opt_13b, TP=1
         "batch_size": np.array([[batch_size]], dtype=np.float32),
         "input_len_sum": np.array([[num_total_tokens]], dtype=np.float32),
         "input_len_mean": np.array([[num_total_tokens / batch_size]], dtype=np.float32),
-        "input_len_std": np.array([[(sum([x ** 2 for x in token_generated_list]) / len(token_generated_list)) ** 0.5]], dtype=np.float32),
+        "input_len_std": np.array([[np.std(token_generated_list)]], dtype=np.float32),
         "tp_degree": np.array([[TP]], dtype=np.float32),
         "freq_mhz": np.array([[GPU_FREQ]], dtype=np.float32),
     }
     delay = dec_model.run(None, input_feed)[0][0][0]
     return delay * 1000
+
+if __name__ == "__main__":
+    print(get_prefill_time_tree(bs=4, decode_bs=4, model_type=ModelTypes.gemma2_27b, TP=2, prefill_len_list=[512]*4))
+    print(get_prefill_time_tree(bs=3, decode_bs=3, model_type=ModelTypes.gemma2_27b, TP=2, prefill_len_list=[512]*3))
+
+    print(get_decode_time_tree(num_requests=4, decode_bs=4, model_type=ModelTypes.gemma2_27b, TP=2, token_generated_list=[512]*4))
+    print(get_decode_time_tree(num_requests=3, decode_bs=3, model_type=ModelTypes.gemma2_27b, TP=2, token_generated_list=[512]*3))
