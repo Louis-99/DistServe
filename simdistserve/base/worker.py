@@ -33,7 +33,6 @@ class WorkerConfig(TypedDict):
     TP: Optional[int]  # Tensor parallelism (default = 1)
     pass
 
-
 class Worker:
     def __init__(
         self, env, wid,
@@ -54,6 +53,7 @@ class Worker:
         decode_back_pressure: float = 0.9,
         engine_type: Literal["distserve", "vllm"] = "distserve",
     ):
+        
         self.env = env
         self.cluster = cluster  # Refer to the cluster of init.
         self.wid = wid
@@ -96,6 +96,7 @@ class Worker:
 
         self.prefill_queue: 'deque[Request]' = deque()
         self.decode_queue: 'deque[Request]' = deque()
+        self.transfer_queue: deque[Request] = deque()
         self._prefill_ips: int = 0  # Elements in progress for prefill
         self._decode_ips: int = 0  # Elements in progress for decode
         self._wakeup_event = env.event()
@@ -105,6 +106,10 @@ class Worker:
         self._prefill_sched_delay: int = 0
         self.engine_type = engine_type
         pass
+
+    def cal_num_block_tokens(self, num_tokens):
+        BLOCK_SIZE=64 
+        return (num_tokens + BLOCK_SIZE - 1) // BLOCK_SIZE * BLOCK_SIZE
 
     @property
     def is_first_in_pipeline(self):
@@ -180,7 +185,7 @@ class Worker:
             items = [items]
 
         if not to_scheduler:
-            self.next_worker.decode_queue.extendleft(items)
+            self.next_worker.decode_queue.extendleft(reversed(items))
             self.next_worker.wakeup()
             return
 
@@ -196,11 +201,20 @@ class Worker:
         # watermark = 0.9
         watermark = 1.0 # fixed by yunzhao
         decode_max_tokens = self.decode_max_tokens * watermark # fixed by yunzhao
+
+        for req in self.transfer_queue.copy():
+            if not req.check_KV_finished(self.env.now):
+                decode_max_tokens -= self.cal_num_block_tokens(req.current_context_len + 1)
+            else:
+                self.transfer_queue.remove(req)
+
         # decode_max_tokens = 50000 # fixed by yunzhao
         _decode_len = min(remaining_tok_in_batch, len(self.decode_queue))
         decode_reqs = []
         decode_queue_index = 0
         for i in range(_decode_len):
+            if decode_queue_index >= len(self.decode_queue):
+                break
             req = self.decode_queue[decode_queue_index]
             # check state of req
             # if state is prefilled, then start KV transfer, change status to inflight, 
@@ -213,23 +227,27 @@ class Worker:
                 else:
                     req.start_KV_transfer(self.env.now)
                     # add tokens, but dont schedule
-                    decode_max_tokens -= (req.current_context_len + 1)
+                    self.transfer_queue.append(req)
+                    decode_max_tokens -= self.cal_num_block_tokens(req.current_context_len + 1)
                     decode_queue_index += 1
                     continue
-            if req.check_KV_finished(self.env.now) is False:
+            if not req.check_KV_finished(self.env.now):
                 decode_queue_index += 1
                 continue
 
             # at this point only normal decode requests are left
-            if (req.current_context_len + 1) > decode_max_tokens:
+            if self.cal_num_block_tokens(req.current_context_len + 1) > decode_max_tokens:
                 break
-            decode_max_tokens -= (req.current_context_len + 1)
+            decode_max_tokens -= self.cal_num_block_tokens(req.current_context_len + 1)
             decode_reqs.append(req)
             self.decode_queue.remove(req)
             if decode_queue_index >= len(self.decode_queue):
                 break
         for r in decode_reqs:
             r.do_decode(wid=self.wid)
+        # if decode_max_tokens < 0 or \
+        #     any(req.state == 'decode' for req in self.decode_queue):
+        #     print("PREEMPTED!!!!!!!!!!")
         return decode_reqs
 
     def _enter_prefill(self) -> 'List[Request]':

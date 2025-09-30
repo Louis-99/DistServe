@@ -103,11 +103,13 @@ def run_binary_search(
             end_time = time.time()
             time_durations.append((config, this_rate, end_time - start_time))
         except Exception as e:
-            # import traceback
-            # print(
-            #     f"({pid=}) Error when computing {config=}. This may not be a real error "
-            #     f"(e.g. bad parallelism strategy). Exception detail: {traceback.format_exc()}."
-            # )
+            from simdistserve.envs import PRINT_EXCEPT_MSG
+            if PRINT_EXCEPT_MSG:
+                import traceback
+                print(
+                    f"({pid=}) Error when computing {config=}. This may not be a real error "
+                    f"(e.g. bad parallelism strategy). Exception detail: {traceback.format_exc()}."
+                )
             return None
 
         # Update the range

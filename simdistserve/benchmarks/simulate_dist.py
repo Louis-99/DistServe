@@ -102,7 +102,7 @@ def check_dataset_existence(x):
     return
 
 
-def load_workload(workload, N, rate, cv, seed, process: Literal["fixed", "gamma"]):
+def load_workload(workload: str, N, rate, cv, seed, process: Literal["fixed", "gamma"]):
     random.seed(seed)
     np.random.seed(seed)
     if workload in ['sharegpt', 'longbench', 'humaneval']:
@@ -125,13 +125,31 @@ def load_workload(workload, N, rate, cv, seed, process: Literal["fixed", "gamma"
     else:
         # Open the file to get the JSON data
         # [ { "start_time": int, "prompt_len": int, "output_len":int,  } ]
-        with open(workload, 'r') as f:
-            data = json.load(f)
-        request_pairs = [(d['prompt_len'], d['output_len']) for d in data]
+        if workload.endswith('.json'):
+            with open(workload, 'r') as f:
+                data = json.load(f)
+            input_len_list = [d['prompt_len'] for d in data]
+            output_len_list = [d['output_len'] for d in data]
+            arrival_time_list = [d['start_time'] for d in data]
+        elif workload.endswith('.csv'):
+            df = pd.read_csv(workload)
+            input_len_list = df['input_len'].to_list()
+            output_len_list = df['output_len'].to_list()
+            arrival_time_list = df['time'].to_list()
+        
+        request_pairs = list(zip(input_len_list, output_len_list))
+            
         requests = convert_pd_pair_to_request(request_pairs)
-        absolute_arrival = [d['start_time'] for d in data]
-        arrival = convert_absolutearrival_to_interarrival(absolute_arrival)
-        pass
+        if process == 'fixed':
+            delay = 1 / rate * 1000  # ms
+            arrival = get_fixed_interarrival(N, delay)
+        else:
+            absolute_arrival = np.array(arrival_time_list)
+            if int(os.getenv('SCALE_ARRIVAL_TIME', '0')):
+                absolute_arrival *= rate
+            arrival = convert_absolutearrival_to_interarrival(absolute_arrival)
+            pass
+    
     return requests, arrival
 
 

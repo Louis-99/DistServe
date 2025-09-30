@@ -3,6 +3,7 @@ Request class for the simulation.
 """
 
 import math
+from simdistserve.envs import OVERWRITE_DECODE_LEN, OVERWRITE_PREFILL_LEN
 
 # Define the request *E_*vents
 E_INIT = "init"
@@ -42,6 +43,12 @@ class Request:
         schedule_wait: int = 0
     ):
         assert req_id is not None, f'Request ID is not set.'
+
+        if OVERWRITE_PREFILL_LEN:
+            prefill_length = OVERWRITE_PREFILL_LEN
+        if OVERWRITE_DECODE_LEN:
+            output_lens = OVERWRITE_DECODE_LEN
+
         self.env = env
         self.req_id = req_id
         # counter: int
