@@ -105,6 +105,9 @@ class Worker:
         # Simulate scheduler delay in terms of number of decode rounds.
         self._prefill_sched_delay: int = 0
         self.engine_type = engine_type
+
+        self.last_prefill_end_time_env = 0.0
+
         pass
 
     def cal_num_block_tokens(self, num_tokens):
@@ -327,6 +330,9 @@ class Worker:
             if item.should_finish():
                 # ... just a sanity check to avoid any infinite loop.
                 continue
+
+            self.last_prefill_end_time_env = self.env.now
+
             self.forward_decode(item, to_scheduler=(not self.should_request_stay))
         return
 
@@ -370,6 +376,7 @@ class Worker:
                 model_type=self.model_type, TP=self.TP_Prefill,
                 prefill_len_list=[x.current_prefill_lens for x in prefill_items],
                 engine_type=self.engine_type,
+                time_since_last_batch=self.env.now - self.last_prefill_end_time_env,
                 # __prefill_reqs=prefill_items,
                 # __decode_reqs=decode_reqs,
             )
