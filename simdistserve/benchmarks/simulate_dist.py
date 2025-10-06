@@ -135,20 +135,19 @@ def load_workload(workload: str, N, rate, cv, seed, process: Literal["fixed", "g
             df = pd.read_csv(workload)
             input_len_list = df['input_len'].to_list()
             output_len_list = df['output_len'].to_list()
-            arrival_time_list = df['time'].to_list()
+            arrival_time_list = df['time'].to_numpy()
+            assert len(input_len_list) == len(arrival_time_list)
         
         request_pairs = list(zip(input_len_list, output_len_list))
             
         requests = convert_pd_pair_to_request(request_pairs)
-        if process == 'fixed':
-            delay = 1 / rate * 1000  # ms
-            arrival = get_fixed_interarrival(N, delay)
-        else:
-            absolute_arrival = np.array(arrival_time_list)
-            if int(os.getenv('SCALE_ARRIVAL_TIME', '0')):
-                absolute_arrival *= rate
-            arrival = convert_absolutearrival_to_interarrival(absolute_arrival)
-            pass
+
+        absolute_arrival = np.array(arrival_time_list)
+        if int(os.getenv('SCALE_ARRIVAL_TIME', '0')):
+            absolute_arrival *= rate
+        arrival = convert_absolutearrival_to_interarrival(absolute_arrival)
+        assert len(requests) == len(absolute_arrival)
+        assert len(requests) == len(arrival)
     
     return requests, arrival
 
@@ -226,9 +225,11 @@ def main(args, outputs=None):
             TP=TP_Prefill, TP_Prefill=TP_Prefill, TP_Decode=TP_Decode,
             prefill_max_batch_size=10 ** 7,  # inf
             decode_max_batch_size=10 ** 7,  # inf
-            prefill_max_tokens=prefill_max_tokens,
+            # prefill_max_tokens=prefill_max_tokens,
+            prefill_max_tokens=2048,
             decode_max_tokens=decode_max_tokens,
             enable_chunked_prefill=False,
+            # enable_chunked_prefill=True,
             engine_type=args.backend,
         )
 
