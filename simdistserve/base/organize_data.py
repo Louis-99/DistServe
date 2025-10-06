@@ -110,11 +110,13 @@ def calculate_per_request_latency(
     # First token latency: time between first event and the first `wait_decode`
     # Decoding latency: time between first event and the last event
     first_event = df[df.event_type == 'init'].groupby('req_id').start_time.min()
+    first_wait_decode = df[df.event_type == 'wait_decode'].groupby('req_id').start_time.min()
     first_do_decode = df[df.event_type == 'do_decode'].groupby('req_id').start_time.min()
     last_event = df[df.event_type == 'exit_system'].groupby('req_id').end_time.max()
 
     # Then, calculate the first token latency and decoding latency for each req_id
-    first_token_latency = first_do_decode - first_event
+    first_token_latency = first_wait_decode - first_event
+    # first_token_latency = first_do_decode - first_event
     decoding_latency = last_event - first_do_decode
     total_latency = last_event - first_event
 
