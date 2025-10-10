@@ -45,8 +45,8 @@ def load_tree_models():
     dec = None
     pre = None
     MODEL_DIR = Path(__file__).parent / "tree_models"
-    dec_path = MODEL_DIR / "decode_model.onnx"
-    pre_path = MODEL_DIR / "prefill_model.onnx"
+    dec_path = MODEL_DIR / "decode_model_latency.onnx"
+    pre_path = MODEL_DIR / "prefill_model_latency.onnx"
     if dec_path.exists():
         dec = ort.InferenceSession(dec_path)
     if pre_path.exists():
@@ -212,7 +212,6 @@ def get_prefill_time_tree(num_tokens=None, pp=1, bs=1, decode_bs=0, model_type=M
         "input_len_std": np.array([[np.std(prefill_len_list)]], dtype=np.float32),
         "tp_degree": np.array([[TP]], dtype=np.float32),
         "freq_mhz": np.array([[GPU_FREQ]], dtype=np.float32),
-        "since_last_batch_s": np.array([[time_since_last_batch/1000.0]], dtype=np.float32),  # placeholder
     }
     delay = pre_model.run(None, input_feed)[0][0][0]
     return delay * 1000
