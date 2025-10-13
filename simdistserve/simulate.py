@@ -31,7 +31,7 @@ def parse_args():
                         help="Number of samples to simulate (default 1000)")
     # TODO: (Yunzhao) add new model type
     parser.add_argument("--model-type", type=str, default="opt_13b",
-                        help="Model type to simulate (opt_13b, opt_66b, opt_175b, llama3_8b, qwen2_14b, phi4, gemma2_27b)")
+                        help="Model type to simulate (opt_13b, opt_66b, opt_175b, llama3_8b, qwen2_14b, phi4, gemma2_27b_it, llama3_70b)")
 
     args = parser.parse_args()
     args.model_type = ModelTypes.model_str_to_object(args.model_type)

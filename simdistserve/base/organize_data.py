@@ -83,7 +83,8 @@ def transform_worker_log_to_df(worker: 'Worker') -> 'DataFrame[WorkerLog_t]':
     df = pd.DataFrame(worker.log, columns=[
         'start_time', 'event_type', 'num_tokens', 'prefill_bs', 'decode_bs',
         'prefill_batch',
-        'decode_batch'
+        'decode_batch',
+        'power',
     ])
     df['worker_id'] = worker.wid
     df['duration'] = df['start_time'].shift(-1) - df['start_time']

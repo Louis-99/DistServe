@@ -28,7 +28,7 @@ from simdistserve.clusters.vllm import VLLMCluster
 from simdistserve.constants import ModelTypes
 from simdistserve.estimators.memory_estimator import get_max_num_tokens, is_model_runnable
 
-from simdistserve.envs import SKIP_DECODE, SKIP_PREFILL
+from simdistserve.envs import SKIP_DECODE, SKIP_PREFILL, SCALE_ARRIVAL_TIME
 
 
 def parse_args(args_=None):
@@ -143,7 +143,7 @@ def load_workload(workload: str, N, rate, cv, seed, process: Literal["fixed", "g
         requests = convert_pd_pair_to_request(request_pairs)
 
         absolute_arrival = np.array(arrival_time_list)
-        if int(os.getenv('SCALE_ARRIVAL_TIME', '0')):
+        if SCALE_ARRIVAL_TIME:
             absolute_arrival *= rate
         arrival = convert_absolutearrival_to_interarrival(absolute_arrival)
         assert len(requests) == len(absolute_arrival)

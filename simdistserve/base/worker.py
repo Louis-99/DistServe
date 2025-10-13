@@ -9,6 +9,7 @@ from uuid import UUID
 
 # from simdistserve.estimators.time_estimator import get_prefill_time, get_decode_time
 from simdistserve.estimators.time_estimator import get_decode_time_tree, get_prefill_time_tree
+from simdistserve.estimators.power_estimator import get_decode_power_tree, get_prefill_power_tree
 
 if TYPE_CHECKING:
     from simdistserve.base.scheduler import Scheduler
@@ -100,7 +101,7 @@ class Worker:
         self._prefill_ips: int = 0  # Elements in progress for prefill
         self._decode_ips: int = 0  # Elements in progress for decode
         self._wakeup_event = env.event()
-        self.log: 'list[tuple[float, str, int, int, int, list[int], list[int]]]' = []
+        self.log: list[tuple[float, str, int, int, int, list[int], list[int], float]] = []
 
         # Simulate scheduler delay in terms of number of decode rounds.
         self._prefill_sched_delay: int = 0
@@ -131,12 +132,12 @@ class Worker:
         return f"Worker {self.wid}"
 
     def _log_event(self, event, num_tokens: int = 0, prefill_bs=0, decode_bs=0,
-                   prefill_len_list=None, decode_len_list=None):
+                   prefill_len_list=None, decode_len_list=None, power=0):
         if prefill_len_list is None:
             prefill_len_list = []
         if decode_len_list is None:
             decode_len_list = []
-        item = (self.env.now, event, num_tokens, prefill_bs, decode_bs, prefill_len_list, decode_len_list)
+        item = (self.env.now, event, num_tokens, prefill_bs, decode_bs, prefill_len_list, decode_len_list, power)
         self.log.append(item)
         # print(item)
         return
@@ -357,6 +358,17 @@ class Worker:
         num_tokens = sum(x.current_prefill_lens for x in prefill_items)
         num_tokens += len(decode_reqs)
 
+        power = get_prefill_power_tree(
+            num_tokens,
+            bs=len(prefill_items),
+            decode_bs=len(decode_reqs),
+            pp=self.cluster.PP_prefill,
+            model_type=self.model_type, TP=self.TP_Prefill,
+            prefill_len_list=[x.current_prefill_lens for x in prefill_items],
+            engine_type=self.engine_type,
+            time_since_last_batch=self.env.now - self.last_prefill_end_time_env,
+        )
+
         self._log_event(
             "do_prefill",
             num_tokens=num_tokens,
@@ -364,6 +376,7 @@ class Worker:
             decode_bs=len(decode_reqs),
             prefill_len_list=[x.current_prefill_lens for x in prefill_items],
             decode_len_list=[x.current_context_len for x in decode_reqs],
+            power=power,
         )
 
         if not SKIP_PREFILL:
@@ -383,8 +396,11 @@ class Worker:
             num_tokens = sum(x.current_context_len for x in (prefill_items + decode_reqs))
             if self.is_first_in_pipeline:
                 delay += self.add_ray_overhead(num_tokens)
+            
         else:
             delay = 0
+        
+        # TODO: (Yunzhao) do something about power
         # Set the number of prefills in progress such that the scheduler get proper information about the worker.
         self._prefill_ips = len(prefill_items)
         yield self.env.timeout(delay)
@@ -396,16 +412,28 @@ class Worker:
     def do_decode(self):
         decode_reqs = self._enter_decodes(self.decode_max_tokens)
         batch_size = len(decode_reqs)
+
+        _token_generated_list = [x.current_context_len + 1 for x in decode_reqs]
+        
+        power = get_decode_power_tree(
+            batch_size, pp=self.cluster.PP_decode,
+            model_type=self.model_type, TP=self.TP_Decode,
+            token_generated_list=_token_generated_list,
+            engine_type=self.engine_type,
+        )
+
         self._log_event(
             "do_decode", num_tokens=batch_size, decode_bs=batch_size,
             decode_len_list=[x.current_context_len for x in decode_reqs],
+            power=power,
         )
-        _token_generated_list = [x.current_context_len + 1 for x in decode_reqs]
         if not SKIP_DECODE:
-            delay = get_decode_time_tree(batch_size, pp=self.cluster.PP_decode,
-                                    model_type=self.model_type, TP=self.TP_Decode,
-                                    token_generated_list=_token_generated_list,
-                                    engine_type=self.engine_type, )
+            delay = get_decode_time_tree(
+                batch_size, pp=self.cluster.PP_decode,
+                model_type=self.model_type, TP=self.TP_Decode,
+                token_generated_list=_token_generated_list,
+                engine_type=self.engine_type,
+            )
             num_tokens = sum(x.current_context_len for x in decode_reqs)
             if self.is_first_in_pipeline:
                 delay += self.add_ray_overhead(num_tokens)
