@@ -226,7 +226,7 @@ def main(args, outputs=None):
             prefill_max_batch_size=10 ** 7,  # inf
             decode_max_batch_size=10 ** 7,  # inf
             # prefill_max_tokens=prefill_max_tokens,
-            prefill_max_tokens=2048,
+            prefill_max_tokens=1024*8,
             decode_max_tokens=decode_max_tokens,
             enable_chunked_prefill=False,
             # enable_chunked_prefill=True,
@@ -331,6 +331,15 @@ def main(args, outputs=None):
 
         outputs['worker_df'] = worker_df
 
+    assert N_Prefill == 1
+    assert N_Decode == 1
+    prefill_worker_df = worker_df[worker_df['worker_id'] == 0]
+    decode_worker_df = worker_df[worker_df['worker_id'] == 1]
+    prefill_worker_df.loc[:, 'power'] = prefill_worker_df['power'].clip(lower=76.603*TP_Prefill) 
+    decode_worker_df.loc[:, 'power'] = decode_worker_df['power'].clip(lower=76.603*TP_Prefill) 
+    prefill_total_energy = np.sum(prefill_worker_df['power'].to_numpy() * prefill_worker_df['duration'].to_numpy() * 1e-3)
+    decode_total_energy = np.sum(decode_worker_df['power'].to_numpy() * decode_worker_df['duration'].to_numpy() * 1e-3)
+
     #
     # Return if the agreement of prefill/decode is met
     #
@@ -352,7 +361,7 @@ def main(args, outputs=None):
         is_decode_contained = t < decode_target
         pass
 
-    return is_prefill_contained, is_decode_contained, df
+    return is_prefill_contained, is_decode_contained, prefill_total_energy, decode_total_energy, df
 
 
 run_experiment = main

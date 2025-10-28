@@ -1,7 +1,7 @@
 import os
 SKIP_PREFILL = bool(int(os.getenv('SKIP_PREFILL', 0)))
 SKIP_DECODE = bool(int(os.getenv('SKIP_DECODE', 0)))
-GPU_FREQ = int(os.getenv('GPU_FREQ', '1980'))
+GPU_FREQ = int(os.getenv('GPU_FREQ', '1830'))
 
 OVERWRITE_PREFILL_LEN = os.getenv('OVERWRITE_PREFILL_LEN')
 if OVERWRITE_PREFILL_LEN:
@@ -14,3 +14,5 @@ if OVERWRITE_DECODE_LEN:
 PRINT_EXCEPT_MSG = bool(int(os.getenv('PRINT_EXCEPT_MSG', '0')))
 
 SCALE_ARRIVAL_TIME = bool(int(os.getenv('SCALE_ARRIVAL_TIME', '0')))
+
+OPTIMIZE_ENERGY = bool(int(os.getenv('OPTIMIZE_POWER', '0')))

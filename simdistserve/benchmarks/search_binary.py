@@ -3,7 +3,7 @@ import time
 from simdistserve.benchmarks.simulate_dist import run_experiment, parse_args
 from simdistserve.constants import ModelTypes
 
-from simdistserve.envs import SKIP_DECODE, SKIP_PREFILL
+from simdistserve.envs import SKIP_DECODE, SKIP_PREFILL, OPTIMIZE_ENERGY
 
 
 def run_binary_search(
@@ -89,6 +89,8 @@ def run_binary_search(
     ]
 
     time_durations = []
+    prefill_energy = None
+    decode_energy = None
     while (high - low) > esp:
         # print(f"pid={pid}, config={config}, low={low}, high={high}")
         # Run simulation
@@ -99,7 +101,7 @@ def run_binary_search(
         args = parse_args(args)
         try:
             start_time = time.time()
-            is_prefill_contained, is_decode_contained, df = run_experiment(args)
+            is_prefill_contained, is_decode_contained, prefill_energy, decode_energy, df = run_experiment(args)
             end_time = time.time()
             time_durations.append((config, this_rate, end_time - start_time))
         except Exception as e:
@@ -125,8 +127,23 @@ def run_binary_search(
         pass
     # print(best_per_gpu_rate)
     if result is not None:
-        result[config] = best_per_gpu_rate
-    return best_per_gpu_rate
+        if OPTIMIZE_ENERGY:
+            assert prefill_energy is not None
+            assert decode_energy is not None
+            assert not SKIP_DECODE or not SKIP_PREFILL
+            if SKIP_DECODE:
+                total_energy = prefill_energy
+            elif SKIP_PREFILL:
+                total_energy = decode_energy
+            else:
+                total_energy = prefill_energy + decode_energy
+            result[config] = N / total_energy
+        else:
+            result[config] = best_per_gpu_rate 
+    if OPTIMIZE_ENERGY:
+        return N / total_energy
+    else:
+        return best_per_gpu_rate
 
 
 if __name__ == '__main__':
