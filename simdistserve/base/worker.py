@@ -9,7 +9,7 @@ from uuid import UUID
 
 # from simdistserve.estimators.time_estimator import get_prefill_time, get_decode_time
 from simdistserve.estimators.time_estimator import get_decode_time_tree, get_prefill_time_tree
-from simdistserve.estimators.power_estimator import get_decode_power_tree, get_prefill_power_tree
+from simdistserve.estimators.power_estimator import get_decode_power_tree, get_prefill_power_interp
 
 if TYPE_CHECKING:
     from simdistserve.base.scheduler import Scheduler
@@ -358,7 +358,7 @@ class Worker:
         num_tokens = sum(x.current_prefill_lens for x in prefill_items)
         num_tokens += len(decode_reqs)
 
-        power = get_prefill_power_tree(
+        power = get_prefill_power_interp(
             num_tokens,
             bs=len(prefill_items),
             decode_bs=len(decode_reqs),

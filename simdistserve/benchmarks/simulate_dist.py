@@ -28,6 +28,7 @@ from simdistserve.clusters.vllm import VLLMCluster
 from simdistserve.constants import ModelTypes
 from simdistserve.estimators.memory_estimator import get_max_num_tokens, is_model_runnable
 
+from simdistserve.estimators.power_estimator import get_prefill_idle_power_interp
 from simdistserve.envs import SKIP_DECODE, SKIP_PREFILL, SCALE_ARRIVAL_TIME
 
 
@@ -335,8 +336,15 @@ def main(args, outputs=None):
     assert N_Decode == 1
     prefill_worker_df = worker_df[worker_df['worker_id'] == 0]
     decode_worker_df = worker_df[worker_df['worker_id'] == 1]
-    prefill_worker_df.loc[:, 'power'] = prefill_worker_df['power'].clip(lower=76.603*TP_Prefill) 
-    decode_worker_df.loc[:, 'power'] = decode_worker_df['power'].clip(lower=76.603*TP_Prefill) 
+    
+    prefill_idle_power = get_prefill_idle_power_interp(TP_Prefill, model_type)
+    # Yunzhao: Use prefill idle power function for decode for now
+    decode_idle_power = get_prefill_idle_power_interp(TP_Decode, model_type)
+    
+    # set idle power
+    prefill_worker_df.loc[:, 'power'] = prefill_worker_df['power'].clip(lower=prefill_idle_power) 
+    decode_worker_df.loc[:, 'power'] = decode_worker_df['power'].clip(lower=decode_idle_power) 
+    
     prefill_total_energy = np.sum(prefill_worker_df['power'].to_numpy() * prefill_worker_df['duration'].to_numpy() * 1e-3)
     decode_total_energy = np.sum(decode_worker_df['power'].to_numpy() * decode_worker_df['duration'].to_numpy() * 1e-3)
 
