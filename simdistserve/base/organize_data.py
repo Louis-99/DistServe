@@ -118,7 +118,13 @@ def calculate_per_request_latency(
     # Then, calculate the first token latency and decoding latency for each req_id
     first_token_latency = first_wait_decode - first_event
     # first_token_latency = first_do_decode - first_event
-    decoding_latency = last_event - first_do_decode
+
+    # Yunzhao: Use first_do_decode does not work because it will always statisfy SLO
+    # We should consider queuing time on decode instance so we should use first_waiting_decode
+    # Old code:
+    # decoding_latency = last_event - first_do_decode
+    # New code:
+    decoding_latency = last_event - first_wait_decode
     total_latency = last_event - first_event
 
     dist_df = pd.DataFrame({
