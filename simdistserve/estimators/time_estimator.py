@@ -126,29 +126,29 @@ def get_prefill_time(num_tokens=None, pp=1, bs=1, decode_bs=0, model_type=ModelT
 
 
 def get_decode_time(num_requests, pp=1, model_type=ModelTypes.opt_13b, TP=1, token_generated_list=None,
-                    engine_type="distserve", **kw):
+                    engine_type="distserve", freq: int = GPU_FREQ, **kw):
     batch_size = num_requests
     model_name = ModelTypes.formalize_model_name(model_type)
 
-    if GPU_FREQ > 0:
+    if freq > 0:
         assert engine_type == "distserve", "only distserve support different GPU frequence right now"
         assert model_name in ours_freq_profile_data.keys()
         params_with_freq = ours_freq_profile_data[model_name][str(TP)]
         freq_list = list(map(int, params_with_freq.keys()))
         freq_list.sort()
-        assert GPU_FREQ >= min(freq_list) and GPU_FREQ <= max(freq_list), "GPU frequency out of range"
-        if GPU_FREQ in freq_list:
-            params = params_with_freq[str(GPU_FREQ)]["decode"]
+        assert freq >= min(freq_list) and freq <= max(freq_list), "GPU frequency out of range"
+        if freq in freq_list:
+            params = params_with_freq[str(freq)]["decode"]
             a, b, c = get_coefs_from_param_with_thres(params, batch_size)
         else: # linear interpolation
             for freq_low, freq_high in zip(freq_list[:-1], freq_list[1:]):
-                if GPU_FREQ > freq_low and GPU_FREQ < freq_high:
+                if freq > freq_low and freq < freq_high:
                     params1 = params_with_freq[str(freq_low)]["decode"]
                     params2 = params_with_freq[str(freq_high)]["decode"]
                     a1, b1, c1 = get_coefs_from_param_with_thres(params1, batch_size)
                     a2, b2, c2 = get_coefs_from_param_with_thres(params2, batch_size)
-                    k1 = (freq_high - GPU_FREQ) / (freq_high - freq_low)
-                    k2 = (GPU_FREQ - freq_low) / (freq_high - freq_low)
+                    k1 = (freq_high - freq) / (freq_high - freq_low)
+                    k2 = (freq - freq_low) / (freq_high - freq_low)
                     a = k1 * a1 + k2 * a2
                     b = k1 * b1 + k2 * b2
                     c = k1 * c1 + k2 * c2
@@ -199,7 +199,7 @@ def get_decode_time(num_requests, pp=1, model_type=ModelTypes.opt_13b, TP=1, tok
 
 
 def get_prefill_time_tree(num_tokens=None, pp=1, bs=1, decode_bs=0, model_type=ModelTypes.opt_13b, TP=1,
-                     prefill_len_list=None, time_since_last_batch=0, engine_type="distserve", **kw):
+                     prefill_len_list=None, time_since_last_batch=0, engine_type="distserve", freq: int = GPU_FREQ, **kw):
     if bs == 0: # for when no work being done
         return 1
     model_name = ModelTypes.formalize_model_name(model_type)
@@ -211,13 +211,13 @@ def get_prefill_time_tree(num_tokens=None, pp=1, bs=1, decode_bs=0, model_type=M
         "input_len_mean": np.array([[num_total_tokens / bs]], dtype=np.float32),
         "input_len_std": np.array([[np.std(prefill_len_list)]], dtype=np.float32),
         "tp_degree": np.array([[TP]], dtype=np.float32),
-        "freq_mhz": np.array([[GPU_FREQ]], dtype=np.float32),
+        "freq_mhz": np.array([[freq]], dtype=np.float32),
     }
     delay = pre_model.run(None, input_feed)[0][0][0]
     return delay * 1000
 
 def get_decode_time_tree(num_requests, pp=1, model_type=ModelTypes.opt_13b, TP=1, token_generated_list=None,
-                    engine_type="distserve", **kw):
+                    engine_type="distserve", freq: int = GPU_FREQ, **kw):
     batch_size = num_requests
     if batch_size == 0: # for when no work being done
         return 1
@@ -230,7 +230,7 @@ def get_decode_time_tree(num_requests, pp=1, model_type=ModelTypes.opt_13b, TP=1
         "input_len_mean": np.array([[num_total_tokens / batch_size]], dtype=np.float32),
         "input_len_std": np.array([[np.std(token_generated_list)]], dtype=np.float32),
         "tp_degree": np.array([[TP]], dtype=np.float32),
-        "freq_mhz": np.array([[GPU_FREQ]], dtype=np.float32),
+        "freq_mhz": np.array([[freq]], dtype=np.float32),
     }
     delay = dec_model.run(None, input_feed)[0][0][0]
     return delay * 1000
