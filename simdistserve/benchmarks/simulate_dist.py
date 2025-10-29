@@ -29,7 +29,7 @@ from simdistserve.constants import ModelTypes
 from simdistserve.estimators.memory_estimator import get_max_num_tokens, is_model_runnable
 
 from simdistserve.estimators.power_estimator import get_prefill_idle_power_interp
-from simdistserve.envs import SKIP_DECODE, SKIP_PREFILL, SCALE_ARRIVAL_TIME
+from simdistserve.envs import SKIP_DECODE, SKIP_PREFILL, SCALE_ARRIVAL_TIME, IGNORE_FIRST_AND_LAST_QUARTER
 
 
 def parse_args(args_=None):
@@ -150,6 +150,9 @@ def load_workload(workload: str, N, rate, cv, seed, process: Literal["fixed", "g
         assert len(requests) == len(absolute_arrival)
         assert len(requests) == len(arrival)
     
+    if SKIP_DECODE:
+        for req in requests:
+            req.output_lens = 1
     return requests, arrival
 
 
@@ -275,14 +278,24 @@ def main(args, outputs=None):
     # then find the attainment (percentage of requests that meet the SLO)
     for scale in args.slo_scales:
         prefill_target = args.prefill_target * scale
-        prefill_attainment = (per_request_latency_df['first_token_latency'] <= prefill_target).sum() / N
+        if IGNORE_FIRST_AND_LAST_QUARTER:
+            first = N // 4
+            last = N * 3 // 4
+            prefill_attainment = (per_request_latency_df['first_token_latency'][first:last] <= prefill_target).sum() / (last - first)
+        else:
+            prefill_attainment = (per_request_latency_df['first_token_latency'] <= prefill_target).sum() / N
         prefill_attainment *= 100
         item = [args.backend, model_type, 'prefill', rate, prefill_target, prefill_attainment,
                 TP_Prefill, PP_prefill, TP_Decode, PP_decode]
         output_results.append(item)
 
         decode_target = args.decode_target * scale
-        decode_attainment = (per_request_latency_df['tpot'] <= decode_target).sum() / N
+        if IGNORE_FIRST_AND_LAST_QUARTER:
+            first = N // 4
+            last = N * 3 // 4
+            decode_attainment = (per_request_latency_df['tpot'][first:last] <= decode_target).sum() / (last - first)
+        else:
+            decode_attainment = (per_request_latency_df['tpot'] <= decode_target).sum() / N
         decode_attainment *= 100
         item = [args.backend, model_type, 'decode', rate, decode_target, decode_attainment,
                 TP_Prefill, PP_prefill, TP_Decode, PP_decode]
@@ -340,14 +353,22 @@ def main(args, outputs=None):
     if not SKIP_PREFILL:
         prefill_idle_power = get_prefill_idle_power_interp(TP_Prefill, model_type)
         prefill_worker_df.loc[:, 'power'] = prefill_worker_df['power'].clip(lower=prefill_idle_power) 
-        prefill_total_energy = np.sum(prefill_worker_df['power'].to_numpy() * prefill_worker_df['duration'].to_numpy() * 1e-3)
+        if IGNORE_FIRST_AND_LAST_QUARTER:
+            total_len = len(prefill_worker_df)
+            prefill_total_energy = np.sum(prefill_worker_df['power'].to_numpy()[total_len // 4 : total_len * 3 // 4] * prefill_worker_df['duration'].to_numpy()[total_len // 4 : total_len * 3 // 4] * 1e-3)
+        else:
+            prefill_total_energy = np.sum(prefill_worker_df['power'].to_numpy() * prefill_worker_df['duration'].to_numpy() * 1e-3)
     else:
         prefill_total_energy = 0
     
     if not SKIP_DECODE:
         decode_idle_power = 76 * TP_Decode
         decode_worker_df.loc[:, 'power'] = decode_worker_df['power'].clip(lower=decode_idle_power) 
-        decode_total_energy = np.sum(decode_worker_df['power'].to_numpy() * decode_worker_df['duration'].to_numpy() * 1e-3)
+        if IGNORE_FIRST_AND_LAST_QUARTER:
+            total_len = len(decode_worker_df)
+            decode_total_energy = np.sum(decode_worker_df['power'].to_numpy()[total_len // 4 : total_len * 3 // 4] * decode_worker_df['duration'].to_numpy()[total_len // 4 : total_len * 3 // 4] * 1e-3)
+        else:
+            decode_total_energy = np.sum(decode_worker_df['power'].to_numpy() * decode_worker_df['duration'].to_numpy() * 1e-3)
     else:
         decode_total_energy = 0
     
