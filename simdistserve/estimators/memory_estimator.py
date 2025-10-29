@@ -49,6 +49,7 @@ model_hyperparams = {
     "Qwen/Qwen2.5-14B-Instruct": (48, 40),
     "microsoft/phi-4": (40, 10),
     "google/gemma-2-27b-it": (46, 16),
+    "meta-llama/Llama-3.3-70B-Instruct": (80, 8), # num_key_value_heads=8
 }
 
 

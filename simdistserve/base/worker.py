@@ -358,16 +358,19 @@ class Worker:
         num_tokens = sum(x.current_prefill_lens for x in prefill_items)
         num_tokens += len(decode_reqs)
 
-        power = get_prefill_power_interp(
-            num_tokens,
-            bs=len(prefill_items),
-            decode_bs=len(decode_reqs),
-            pp=self.cluster.PP_prefill,
-            model_type=self.model_type, TP=self.TP_Prefill,
-            prefill_len_list=[x.current_prefill_lens for x in prefill_items],
-            engine_type=self.engine_type,
-            time_since_last_batch=self.env.now - self.last_prefill_end_time_env,
-        )
+        if not SKIP_PREFILL:
+            power = get_prefill_power_interp(
+                num_tokens,
+                bs=len(prefill_items),
+                decode_bs=len(decode_reqs),
+                pp=self.cluster.PP_prefill,
+                model_type=self.model_type, TP=self.TP_Prefill,
+                prefill_len_list=[x.current_prefill_lens for x in prefill_items],
+                engine_type=self.engine_type,
+                time_since_last_batch=self.env.now - self.last_prefill_end_time_env,
+            )
+        else:
+            power = 0
 
         self._log_event(
             "do_prefill",

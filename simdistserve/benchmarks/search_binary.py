@@ -125,7 +125,6 @@ def run_binary_search(
         low = this_rate
         best_per_gpu_rate = this_rate
         pass
-    # print(best_per_gpu_rate)
     if result is not None:
         if OPTIMIZE_ENERGY:
             assert prefill_energy is not None

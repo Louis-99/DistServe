@@ -326,8 +326,8 @@ def main(args, outputs=None):
     #
     # Collect worker-level data
     #
+    worker_df = organize_worker_event_df(cluster)
     if args.output_worker:
-        worker_df = organize_worker_event_df(cluster)
         worker_df.to_csv(args.output_worker, index=False)
 
         outputs['worker_df'] = worker_df
@@ -336,18 +336,21 @@ def main(args, outputs=None):
     assert N_Decode == 1
     prefill_worker_df = worker_df[worker_df['worker_id'] == 0]
     decode_worker_df = worker_df[worker_df['worker_id'] == 1]
-    
-    prefill_idle_power = get_prefill_idle_power_interp(TP_Prefill, model_type)
-    # Yunzhao: Use prefill idle power function for decode for now
-    decode_idle_power = get_prefill_idle_power_interp(TP_Decode, model_type)
-    
-    # set idle power
-    prefill_worker_df.loc[:, 'power'] = prefill_worker_df['power'].clip(lower=prefill_idle_power) 
-    decode_worker_df.loc[:, 'power'] = decode_worker_df['power'].clip(lower=decode_idle_power) 
-    
-    prefill_total_energy = np.sum(prefill_worker_df['power'].to_numpy() * prefill_worker_df['duration'].to_numpy() * 1e-3)
-    decode_total_energy = np.sum(decode_worker_df['power'].to_numpy() * decode_worker_df['duration'].to_numpy() * 1e-3)
 
+    if not SKIP_PREFILL:
+        prefill_idle_power = get_prefill_idle_power_interp(TP_Prefill, model_type)
+        prefill_worker_df.loc[:, 'power'] = prefill_worker_df['power'].clip(lower=prefill_idle_power) 
+        prefill_total_energy = np.sum(prefill_worker_df['power'].to_numpy() * prefill_worker_df['duration'].to_numpy() * 1e-3)
+    else:
+        prefill_total_energy = 0
+    
+    if not SKIP_DECODE:
+        decode_idle_power = 76 * TP_Decode
+        decode_worker_df.loc[:, 'power'] = decode_worker_df['power'].clip(lower=decode_idle_power) 
+        decode_total_energy = np.sum(decode_worker_df['power'].to_numpy() * decode_worker_df['duration'].to_numpy() * 1e-3)
+    else:
+        decode_total_energy = 0
+    
     #
     # Return if the agreement of prefill/decode is met
     #

@@ -119,11 +119,11 @@ idle_power_values_dict = {
 def get_prefill_power_interp(num_tokens=None, pp=1, bs=1, decode_bs=0, model_type=ModelTypes.opt_13b, TP=1,
                      prefill_len_list=None, time_since_last_batch=0, engine_type="distserve", **kw):
     assert model_type == ModelTypes.llama3_70b, "Currently only support Llama3-70B"
-    assert TP == 2 or TP == 4
+    assert TP == 2 or TP == 4, f"{TP=} is not in {{2, 4}}"
     input_len = min(2048, max(32, num_tokens))
-    return interpn(points=(possible_input_len, possible_freq), values=busy_power_values_dict[TP], xi=[input_len, GPU_FREQ])
+    return float(interpn(points=(possible_input_len, possible_freq), values=busy_power_values_dict[TP], xi=[input_len, GPU_FREQ]))
 
-def get_prefill_idle_power_interp(tp: int, model_type: ModelTypes):
+def get_prefill_idle_power_interp(TP: int, model_type: ModelTypes):
     assert model_type == ModelTypes.llama3_70b, "Currently only support Llama3-70B"
-    assert tp == 2 or tp == 4
-    return interpn(points=(possible_freq,), values=idle_power_values_dict[tp], xi=[GPU_FREQ])
+    assert TP == 2 or TP == 4, f"{TP=} is not in {{2, 4}}"
+    return float(interpn(points=(possible_freq,), values=idle_power_values_dict[TP], xi=[GPU_FREQ]))
