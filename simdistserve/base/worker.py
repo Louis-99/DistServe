@@ -223,21 +223,22 @@ class Worker:
             # check state of req
             # if state is prefilled, then start KV transfer, change status to inflight, 
             # but dont schedule
-            if req.state == 'prefilled':
-                # if enough space, then start KV transfer
-                if (req.current_context_len) > decode_max_tokens:
-                    decode_queue_index += 1
-                    continue
-                else:
-                    req.start_KV_transfer(self.env.now)
-                    # add tokens, but dont schedule
-                    self.transfer_queue.append(req)
-                    decode_max_tokens -= self.cal_num_block_tokens(req.current_context_len + 1)
-                    decode_queue_index += 1
-                    continue
-            if not req.check_KV_finished(self.env.now):
-                decode_queue_index += 1
-                continue
+            # Yunzhao: Currently the transfer is buggy, skip for now
+            # if req.state == 'prefilled':
+            #     # if enough space, then start KV transfer
+            #     if (req.current_context_len) > decode_max_tokens:
+            #         decode_queue_index += 1
+            #         continue
+            #     else:
+            #         req.start_KV_transfer(self.env.now)
+            #         # add tokens, but dont schedule
+            #         self.transfer_queue.append(req)
+            #         decode_max_tokens -= self.cal_num_block_tokens(req.current_context_len + 1)
+            #         decode_queue_index += 1
+            #         continue
+            # if not req.check_KV_finished(self.env.now):
+            #     decode_queue_index += 1
+            #     continue
 
             # at this point only normal decode requests are left
             if self.cal_num_block_tokens(req.current_context_len + 1) > decode_max_tokens:
