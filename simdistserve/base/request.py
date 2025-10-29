@@ -151,6 +151,9 @@ class Request:
         return
     
     def check_KV_finished(self, time):
+        # TODO: (Yunzhao) If all requests' KV transfers are not finished, we should yield env.timeout
+        # tmp FIX now by always return true 
+        return True
         if self.state != 'inflight':
             return True
         #omar TODO currently hardcoded for Gemma-2-27B-it
