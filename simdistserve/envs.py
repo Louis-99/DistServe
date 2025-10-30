@@ -16,3 +16,5 @@ PRINT_EXCEPT_MSG = bool(int(os.getenv('PRINT_EXCEPT_MSG', '0')))
 SCALE_ARRIVAL_TIME = bool(int(os.getenv('SCALE_ARRIVAL_TIME', '0')))
 
 OPTIMIZE_ENERGY = bool(int(os.getenv('OPTIMIZE_POWER', '0')))
+
+IGNORE_FIRST_AND_LAST_QUARTER = bool(int(os.getenv('IGNORE_FIRST_AND_LAST_QUARTER', '0')))
