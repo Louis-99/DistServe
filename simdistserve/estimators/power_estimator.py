@@ -35,6 +35,7 @@ def get_prefill_power_tree(num_tokens=None, pp=1, bs=1, decode_bs=0, model_type=
                      prefill_len_list=None, time_since_last_batch=0, engine_type="distserve", freq: int = GPU_FREQ, **kw):
     if bs == 0: # for when no work being done
         return 0
+    assert False, "don't use tree model for prefill power, use interp instead"
     model_name = ModelTypes.formalize_model_name(model_type)
     num_total_tokens = sum(prefill_len_list)
     input_feed = {
@@ -54,19 +55,35 @@ def get_decode_power_tree(num_requests, pp=1, model_type=ModelTypes.opt_13b, TP=
     batch_size = num_requests
     if batch_size == 0: # for when no work being done
         return 0
+    
+    sample_freq_list = [780, 1080, 1380, 1680, 1830]
+    assert min(sample_freq_list) <= freq <= max(sample_freq_list)
+    if freq in sample_freq_list:
+        query_freq_list = [freq]
+    else:
+        for i, sample_freq in enumerate(sample_freq_list):
+            if freq <= sample_freq:
+                query_freq_list = [sample_freq_list[0]] if i == 0 else [sample_freq_list[i-1], sample_freq_list[i]]
+                break
+    
+    power_list = []
     model_name = ModelTypes.formalize_model_name(model_type)
     num_total_tokens = sum(token_generated_list)
-    input_feed = {
-        "model": np.array([[model_name]], dtype=str),
-        "batch_size": np.array([[batch_size]], dtype=np.float32),
-        "input_len_sum": np.array([[num_total_tokens]], dtype=np.float32),
-        "input_len_mean": np.array([[num_total_tokens / batch_size]], dtype=np.float32),
-        "input_len_std": np.array([[np.std(token_generated_list)]], dtype=np.float32),
-        "tp_degree": np.array([[TP]], dtype=np.float32),
-        "freq_mhz": np.array([[freq]], dtype=np.float32),
-    }
-    power = dec_model.run(None, input_feed)[0][0][0]
-    return power
+    for sample_freq in query_freq_list:
+        input_feed = {
+            "model": np.array([[model_name]], dtype=str),
+            "batch_size": np.array([[batch_size]], dtype=np.float32),
+            "input_len_sum": np.array([[num_total_tokens]], dtype=np.float32),
+            "input_len_mean": np.array([[num_total_tokens / batch_size]], dtype=np.float32),
+            "input_len_std": np.array([[np.std(token_generated_list)]], dtype=np.float32),
+            "tp_degree": np.array([[TP]], dtype=np.float32),
+            "freq_mhz": np.array([[sample_freq]], dtype=np.float32),
+        }
+        power_list.append(dec_model.run(None, input_feed)[0][0][0])
+    if len(power_list) == 1:
+        return power_list[0]
+    else:
+        return float(interpn(points=(query_freq_list,), values=power_list, xi=[freq]))
 
 # New code for interp prefill power
 
