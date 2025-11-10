@@ -3,7 +3,7 @@ import time
 from simdistserve.benchmarks.simulate_dist import run_experiment, parse_args
 from simdistserve.constants import ModelTypes
 
-from simdistserve.envs import SKIP_DECODE, SKIP_PREFILL, OPTIMIZE_ENERGY
+from simdistserve.envs import get_skip_decode, get_skip_prefill, OPTIMIZE_ENERGY, get_gpu_freq
 
 
 def run_binary_search(
@@ -15,6 +15,8 @@ def run_binary_search(
     backend: str,
     containment_targets: '(prefill_target, decode_target, prefill_containment, decode_containment)',
     max_per_gpu_rate: int = 16,
+    min_per_gpu_rate: int = 0,
+    freq: None|int = None,
     pid=0,
     esp=0.5,
     N=1000,
@@ -22,6 +24,9 @@ def run_binary_search(
     result=None,
 ):
     N = str(N)
+
+    if freq is None:
+        freq = get_gpu_freq()
 
     #
     # make config args
@@ -49,10 +54,10 @@ def run_binary_search(
                 '--n-decode', f'{n_decode}',
             ]
 
-        assert not (SKIP_DECODE and SKIP_PREFILL)
-        if SKIP_DECODE: # prefill only
+        assert not (get_skip_decode() and get_skip_prefill())
+        if get_skip_decode(): # prefill only
             num_gpu = pp_cross * pp_prefill * tp_prefill
-        elif SKIP_PREFILL: # decode only
+        elif get_skip_prefill(): # decode only
             num_gpu = pp_cross * pp_decode * tp_decode
     else:
         (tp, pp) = config
@@ -69,7 +74,7 @@ def run_binary_search(
     #
     # bisect the integer range between 1 <= per_gpu_rate <= max_per_gpu_rate
     #
-    low = 0
+    low = min_per_gpu_rate
     high = max_per_gpu_rate
     best_per_gpu_rate = 0
 
@@ -86,6 +91,7 @@ def run_binary_search(
         '--slas', '[]',
         '--slo-scales', '[1]',
         '--backend', backend,
+        '--freq', freq,
     ]
 
     time_durations = []
@@ -95,6 +101,7 @@ def run_binary_search(
         # print(f"pid={pid}, config={config}, low={low}, high={high}")
         # Run simulation
         this_rate = (low + high) / 2
+        # print(f'{this_rate=}')
         rate = this_rate * num_gpu
         args = [*fixed_args, *config_args, '--rate', rate, ]
         args = [str(i) for i in args]
@@ -126,19 +133,19 @@ def run_binary_search(
         best_per_gpu_rate = this_rate
         pass
     if result is not None:
+        assert prefill_energy is not None
+        assert decode_energy is not None
+        assert not get_skip_decode() or not get_skip_prefill()
+        if get_skip_decode():
+            total_energy = prefill_energy
+        elif get_skip_prefill():
+            total_energy = decode_energy
+        else:
+            total_energy = prefill_energy + decode_energy
         if OPTIMIZE_ENERGY:
-            assert prefill_energy is not None
-            assert decode_energy is not None
-            assert not SKIP_DECODE or not SKIP_PREFILL
-            if SKIP_DECODE:
-                total_energy = prefill_energy
-            elif SKIP_PREFILL:
-                total_energy = decode_energy
-            else:
-                total_energy = prefill_energy + decode_energy
             result[config] = N / total_energy
         else:
-            result[config] = best_per_gpu_rate 
+            result[config] = (best_per_gpu_rate, total_energy) 
     if OPTIMIZE_ENERGY:
         return N / total_energy
     else:

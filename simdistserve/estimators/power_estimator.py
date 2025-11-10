@@ -5,7 +5,7 @@ import pandas as pd
 from pathlib import Path
 
 from simdistserve.constants import ModelTypes
-from simdistserve.envs import GPU_FREQ
+from simdistserve.envs import get_gpu_freq
 
 from lightgbm import LGBMRegressor
 from joblib import load
@@ -32,7 +32,9 @@ dec_model, pre_model = load_tree_models()
 
 
 def get_prefill_power_tree(num_tokens=None, pp=1, bs=1, decode_bs=0, model_type=ModelTypes.opt_13b, TP=1,
-                     prefill_len_list=None, time_since_last_batch=0, engine_type="distserve", freq: int = GPU_FREQ, **kw):
+                     prefill_len_list=None, time_since_last_batch=0, engine_type="distserve", freq: None|int = None, **kw):
+    if freq is None:
+        freq = get_gpu_freq()
     if bs == 0: # for when no work being done
         return 0
     assert False, "don't use tree model for prefill power, use interp instead"
@@ -51,7 +53,10 @@ def get_prefill_power_tree(num_tokens=None, pp=1, bs=1, decode_bs=0, model_type=
     return power
 
 def get_decode_power_tree(num_requests, pp=1, model_type=ModelTypes.opt_13b, TP=1, token_generated_list=None,
-                    engine_type="distserve", freq: int = GPU_FREQ, **kw):
+                    engine_type="distserve", freq: None|int = None, **kw):
+    if freq is None:
+        freq = get_gpu_freq()
+
     batch_size = num_requests
     if batch_size == 0: # for when no work being done
         return 0
@@ -134,13 +139,17 @@ idle_power_values_dict = {
 }
 
 def get_prefill_power_interp(num_tokens=None, pp=1, bs=1, decode_bs=0, model_type=ModelTypes.opt_13b, TP=1,
-                     prefill_len_list=None, time_since_last_batch=0, engine_type="distserve", freq: int = GPU_FREQ, **kw):
+                     prefill_len_list=None, time_since_last_batch=0, engine_type="distserve", freq: None|int = None, **kw):
     assert model_type == ModelTypes.llama3_70b, "Currently only support Llama3-70B"
     assert TP == 2 or TP == 4, f"{TP=} is not in {{2, 4}}"
+    if freq is None:
+        freq = get_gpu_freq()
     input_len = min(2048, max(32, num_tokens))
     return float(interpn(points=(possible_input_len, possible_freq), values=busy_power_values_dict[TP], xi=[input_len, freq]))
 
-def get_prefill_idle_power_interp(TP: int, model_type: ModelTypes, freq: int = GPU_FREQ):
+def get_prefill_idle_power_interp(TP: int, model_type: ModelTypes, freq: None|int = None):
+    if freq is None:
+        freq = get_gpu_freq()
     assert model_type == ModelTypes.llama3_70b, "Currently only support Llama3-70B"
     assert TP == 2 or TP == 4, f"{TP=} is not in {{2, 4}}"
     return float(interpn(points=(possible_freq,), values=idle_power_values_dict[TP], xi=[freq]))

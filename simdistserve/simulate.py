@@ -3,7 +3,7 @@ import argparse
 from simdistserve.benchmarks.parallel_bisect import simulate_bisect_search
 from simdistserve.constants import ModelTypes
 
-from simdistserve.envs import SKIP_DECODE, SKIP_PREFILL
+from simdistserve.envs import get_skip_decode, get_skip_prefill
 
 
 def parse_args():
@@ -35,9 +35,9 @@ def parse_args():
 
     args = parser.parse_args()
     args.model_type = ModelTypes.model_str_to_object(args.model_type)
-    if SKIP_DECODE:
+    if get_skip_decode():
         args.decode_target = int(1e9)
-    if SKIP_PREFILL:
+    if get_skip_prefill():
         args.prefill_target = int(1e9)
     return args
 
@@ -48,6 +48,8 @@ def find_best_config(config_to_best_per_gpu_rate, backend):
     best_per_gpu_rate = 0
     num_gpu = 0
     for config, per_gpu_rate in config_to_best_per_gpu_rate.items():
+        if isinstance(per_gpu_rate, tuple):
+            per_gpu_rate=per_gpu_rate[0]
         if backend == 'distserve':
             pp_cross, tp_prefill, pp_prefill, tp_decode, pp_decode, n_prefill, n_decode = config
             num_gpu = pp_cross * (tp_prefill * pp_prefill * n_prefill + tp_decode * pp_decode * n_decode)

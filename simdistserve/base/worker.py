@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from simdistserve.base.scheduler import Scheduler
     from simdistserve.base.request import Request
 
-from simdistserve.envs import SKIP_PREFILL, SKIP_DECODE
+from simdistserve.envs import get_skip_prefill, get_skip_decode
 
 # TODO: (Refactor) Make this a configuration.
 class WorkerConfig(TypedDict):
@@ -359,7 +359,7 @@ class Worker:
         num_tokens = sum(x.current_prefill_lens for x in prefill_items)
         num_tokens += len(decode_reqs)
 
-        if not SKIP_PREFILL:
+        if not get_skip_prefill():
             power = get_prefill_power_interp(
                 num_tokens,
                 bs=len(prefill_items),
@@ -383,7 +383,7 @@ class Worker:
             power=power,
         )
 
-        if not SKIP_PREFILL:
+        if not get_skip_prefill():
             # Get prefill time wrt total number of tokens.
             delay = get_prefill_time_tree(
                 num_tokens,
@@ -431,7 +431,7 @@ class Worker:
             decode_len_list=[x.current_context_len for x in decode_reqs],
             power=power,
         )
-        if not SKIP_DECODE:
+        if not get_skip_decode():
             delay = get_decode_time_tree(
                 batch_size, pp=self.cluster.PP_decode,
                 model_type=self.model_type, TP=self.TP_Decode,

@@ -29,7 +29,8 @@ from simdistserve.constants import ModelTypes
 from simdistserve.estimators.memory_estimator import get_max_num_tokens, is_model_runnable
 
 from simdistserve.estimators.power_estimator import get_prefill_idle_power_interp
-from simdistserve.envs import SKIP_DECODE, SKIP_PREFILL, SCALE_ARRIVAL_TIME, IGNORE_FIRST_AND_LAST_QUARTER
+from simdistserve.envs import get_skip_prefill, get_skip_decode, SCALE_ARRIVAL_TIME, IGNORE_FIRST_AND_LAST_QUARTER
+from simdistserve.envs import set_gpu_freq, set_skip_decode, set_skip_prefill
 
 
 def parse_args(args_=None):
@@ -84,6 +85,10 @@ def parse_args(args_=None):
                         help='Print verbose output')
     parser.add_argument('--n-decode', type=int, default=1)
     parser.add_argument('--n-prefill', type=int, default=1)
+    parser.add_argument('--freq', type=int)
+    parser.add_argument('--skip-prefill', type=int)
+    parser.add_argument('--skip-decode', type=int)
+
 
 
     args = parser.parse_args(args=args_)
@@ -150,7 +155,7 @@ def load_workload(workload: str, N, rate, cv, seed, process: Literal["fixed", "g
         assert len(requests) == len(absolute_arrival)
         assert len(requests) == len(arrival)
     
-    if SKIP_DECODE:
+    if get_skip_decode():
         for req in requests:
             req.output_lens = 1
     return requests, arrival
@@ -174,27 +179,34 @@ def main(args, outputs=None):
     N_Prefill = args.n_prefill
     N_Decode = args.n_decode
 
+    if args.freq is not None:
+        set_gpu_freq(args.freq)
+    if args.skip_prefill is not None:
+        set_skip_prefill(bool(args.skip_prefill))
+    if args.skip_decode is not None:
+        set_skip_decode(bool(args.skip_decode))
+
     #
     # Handle vllm in data processing
     #
-    if not SKIP_PREFILL and not is_model_runnable(model_type, TP_Prefill, PP_prefill):
+    if not get_skip_prefill() and not is_model_runnable(model_type, TP_Prefill, PP_prefill):
         raise ValueError(
             f"Model {model_type} is not runnable with TP={TP_Prefill}, PP={PP_prefill}. "
             f"Skipping by throwing exception..."
         )
     
-    if not SKIP_DECODE and not is_model_runnable(model_type, TP_Decode, PP_decode):
+    if not get_skip_decode() and not is_model_runnable(model_type, TP_Decode, PP_decode):
         raise ValueError(
             f"Model {model_type} is not runnable with TP={TP_Prefill}, PP={PP_prefill}. "
             f"Skipping by throwing exception..."
         )
     
-    if SKIP_PREFILL:
+    if get_skip_prefill():
         prefill_max_tokens = int(1e9)
     else:
         prefill_max_tokens = get_max_num_tokens(model_type, TP_Prefill, PP_prefill)
     
-    if SKIP_DECODE:
+    if get_skip_decode():
         decode_max_tokens = int(1e9)
     elif args.backend == 'vllm':
         TP_Decode = PP_decode = 0
@@ -345,28 +357,42 @@ def main(args, outputs=None):
 
         outputs['worker_df'] = worker_df
 
-    assert N_Prefill == 1
-    assert N_Decode == 1
-    prefill_worker_df = worker_df[worker_df['worker_id'] == 0]
-    decode_worker_df = worker_df[worker_df['worker_id'] == 1]
+    # if __name__ == '__main__':
+    #     print('run simulate_dist as main')
+    #     return
+    
+    # assert N_Prefill == 1
+    # assert N_Decode == 1
+    assert worker_df['worker_id'].max() + 1 == N_Prefill + N_Decode
+    prefill_worker_df = worker_df[worker_df['worker_id'] < N_Prefill]
+    decode_worker_df = worker_df[worker_df['worker_id'] >= N_Prefill]
 
-    if not SKIP_PREFILL:
+    if not get_skip_prefill():
         prefill_idle_power = get_prefill_idle_power_interp(TP_Prefill, model_type)
         prefill_worker_df.loc[:, 'power'] = prefill_worker_df['power'].clip(lower=prefill_idle_power) 
         if IGNORE_FIRST_AND_LAST_QUARTER:
-            total_len = len(prefill_worker_df)
-            prefill_total_energy = np.sum(prefill_worker_df['power'].to_numpy()[total_len // 4 : total_len * 3 // 4] * prefill_worker_df['duration'].to_numpy()[total_len // 4 : total_len * 3 // 4] * 1e-3)
+            prefill_total_energy = 0
+            for worker_id in prefill_worker_df['worker_id'].unique():
+                prefill_worker_part_df = prefill_worker_df[prefill_worker_df['worker_id'] == worker_id]
+                total_len = len(prefill_worker_part_df)
+                power_array = prefill_worker_part_df['power'].to_numpy()[total_len // 4 : total_len * 3 // 4]
+                duration_array = prefill_worker_part_df['duration'].to_numpy()[total_len // 4 : total_len * 3 // 4] * 1e-3
+                prefill_total_energy += np.sum(power_array * duration_array)
         else:
             prefill_total_energy = np.sum(prefill_worker_df['power'].to_numpy() * prefill_worker_df['duration'].to_numpy() * 1e-3)
     else:
         prefill_total_energy = 0
     
-    if not SKIP_DECODE:
+    if not get_skip_decode():
         decode_idle_power = 76 * TP_Decode
         decode_worker_df.loc[:, 'power'] = decode_worker_df['power'].clip(lower=decode_idle_power) 
         if IGNORE_FIRST_AND_LAST_QUARTER:
-            total_len = len(decode_worker_df)
-            decode_total_energy = np.sum(decode_worker_df['power'].to_numpy()[total_len // 4 : total_len * 3 // 4] * decode_worker_df['duration'].to_numpy()[total_len // 4 : total_len * 3 // 4] * 1e-3)
+            for worker_id in decode_worker_df['worker_id'].unique():
+                decode_worker_part_df = decode_worker_df[decode_worker_df['worker_id'] == worker_id]
+                total_len = len(decode_worker_part_df)
+                power_array = decode_worker_part_df['power'].to_numpy()[total_len // 4 : total_len * 3 // 4]
+                duration_array = decode_worker_part_df['duration'].to_numpy()[total_len // 4 : total_len * 3 // 4] * 1e-3
+                decode_total_energy = np.sum(power_array * duration_array)
         else:
             decode_total_energy = np.sum(decode_worker_df['power'].to_numpy() * decode_worker_df['duration'].to_numpy() * 1e-3)
     else:

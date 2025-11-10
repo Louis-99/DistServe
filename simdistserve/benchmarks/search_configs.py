@@ -3,7 +3,7 @@ from itertools import product
 from simdistserve.constants import ModelTypes
 from simdistserve.estimators.memory_estimator import get_model_possible_tp, get_model_possible_pp
 
-from simdistserve.envs import SKIP_DECODE, SKIP_PREFILL
+from simdistserve.envs import get_skip_decode, get_skip_prefill
 
 def get_distserve_configs(
     model_type: ModelTypes,
@@ -61,14 +61,14 @@ def get_distserve_configs(
             gpu_per_prefill = tp_prefill * pp_prefill
             gpu_per_decode = tp_decode * pp_decode
             max_instance_cnt = total_num_gpus // min(gpu_per_decode, gpu_per_prefill)
-            if SKIP_PREFILL or SKIP_DECODE:
+            if get_skip_prefill() or get_skip_decode():
                 max_instance_cnt = 2 # one for decode and one for prefill (cannot be 1 because of code below)
             for n_prefill in range(1, max_instance_cnt): # = max_instance_cnt is not possible
                 for n_decode in range(1, max_instance_cnt): # = max_instance_cnt is not possible
                     if n_prefill * gpu_per_prefill + n_decode * gpu_per_decode > total_num_gpus:
                         break
-                    if SKIP_DECODE or SKIP_PREFILL:
-                        if SKIP_DECODE:
+                    if get_skip_decode() or get_skip_prefill():
+                        if get_skip_decode():
                             cur_config = (tp_prefill, pp_prefill)
                         else: # SKIP_PREFIL
                             cur_config = (tp_decode, pp_decode)
