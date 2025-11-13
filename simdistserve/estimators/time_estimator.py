@@ -206,7 +206,7 @@ def get_prefill_time_tree(num_tokens=None, pp=1, bs=1, decode_bs=0, model_type=M
         freq = get_gpu_freq()
     if bs == 0: # for when no work being done
         return 1
-    sample_freq_list = [780, 1080, 1380, 1680, 1830]
+    sample_freq_list = [360, 570, 780, 1080, 1380, 1680, 1830]
     assert min(sample_freq_list) <= freq <= max(sample_freq_list)
     if freq in sample_freq_list:
         query_freq_list = [freq]
@@ -244,7 +244,7 @@ def get_decode_time_tree(num_requests, pp=1, model_type=ModelTypes.opt_13b, TP=1
     if batch_size == 0: # for when no work being done
         return 1
 
-    sample_freq_list = [780, 1080, 1380, 1680, 1830]
+    sample_freq_list = [360, 570, 780, 1080, 1380, 1680, 1830]
     assert min(sample_freq_list) <= freq <= max(sample_freq_list)
     if freq in sample_freq_list:
         query_freq_list = [freq]
