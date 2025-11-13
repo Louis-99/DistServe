@@ -20,6 +20,10 @@ from simdistserve.benchmarks.simulate_dist import run_experiment, parse_args
 # to query the number of CPUs
 MAX_CPU_COUNT = min(os.cpu_count() - 2, int(os.getenv('MAX_CPU_COUNT', 32)))
 
+GOODPUT_DICT_UPDATE_ALPHA = 0.5
+# CONFIG_N_SCALE = 2
+CONFIG_N_SCALE = 1
+
 
 def run_binary_search(
     model_type: ModelTypes,
@@ -33,6 +37,7 @@ def run_binary_search(
     result: None|dict =None,
     low_dict: None|dict = None,
     high_dict: None|dict = None,
+    seed: int = 0,
 ):
     N = str(N)
 
@@ -76,14 +81,14 @@ def run_binary_search(
                 if f > freq and prev_rate < high:
                     high = prev_rate
 
-    print(f'{config=} {low=:.2f} {high=:.2f}')
+    # print(f'{config=} {low=:.2f} {high=:.2f}')
 
 
     best_per_gpu_rate = 0
 
     fixed_args = [
         '--arrival', 'poisson',
-        '--seed', '0',
+        '--seed', str(int(seed)),
         '--N', N,
         '--prefill-containment', prefill_containment,  # P90
         '--prefill-target', prefill_target,  # ms
@@ -144,10 +149,10 @@ def run_binary_search(
     return best_per_gpu_rate
 
 def generate_configs_dict():
-    # freq_list = np.arange(780, 1830+1, 30).tolist()
+    freq_list = np.arange(780, 1830+1, 30).tolist()
     # freq_list = np.arange(780, 1830+1, 75).tolist()
     # freq_list = np.arange(780, 1830+1, 150).tolist()
-    freq_list = np.arange(780, 1830+1, 300).tolist()
+    # freq_list = np.arange(780, 1830+1, 300).tolist()
     freq_idx = [0, len(freq_list)-1]
 
     while len(freq_idx) < len(freq_list):
@@ -174,11 +179,16 @@ def main(
     attainment=(200, 100, 90, 90),
     max_per_gpu_rate=5, esp=0.25, N=1000,
     max_cpu_count=MAX_CPU_COUNT,
+    goodput_dict: None|dict[tuple, float] = None,
+    target_goodput: None|float = None,
+    seed: int = 0,
 ):
     """
     :return result: dict that maps config to the best_per_gpu_rate (int)
     """
     assert backend == "distserve"
+
+    assert target_goodput is not None or goodput_dict is None
 
     configs_dict = generate_configs_dict()
     processes_dict: dict[str, list[Process]] = {key: [] for key in configs_dict.keys()}
@@ -212,6 +222,14 @@ def main(
                         continue
 
                     config = configs.pop(0)
+                    # number of requests needed for this simulation is dependent on its pass goodput
+                    config_N = N
+                    if goodput_dict is not None and config in goodput_dict.keys():
+                        old_goodput = goodput_dict[config]
+                        config_N = int(min(1, CONFIG_N_SCALE * old_goodput / target_goodput) * N)
+                        config_N = max(500, config_N)
+                    # print(f'{config=} {config_N=}')
+
                     proc = Process(
                         target=run_binary_search,
                         args=(
@@ -221,9 +239,10 @@ def main(
                         kwargs=dict(
                             high=max_per_gpu_rate,
                             esp=esp,
-                            N=N, result=result,
+                            N=config_N, result=result,
                             low_dict=low_dict,
                             high_dict=high_dict,
+                            seed=seed,
                         )
                     )
                     proc.start()
@@ -234,17 +253,60 @@ def main(
                     pbar.update(1)      
                     p.join()
         result = dict(result)
+
+        # update goodput dict
+        for config, (goodput, _) in result.items():
+            goodput *= config[0] + config[1]
+            if config in goodput_dict.keys():
+                goodput_dict[config] += GOODPUT_DICT_UPDATE_ALPHA * (goodput - goodput_dict[config])
+            else:
+                goodput_dict[config] = goodput
+        
         return result
     
 
 if __name__ == '__main__':
-    result = main(
-        model_type=ModelTypes.llama3_70b, 
-        attainment=(600, 100, 95, 95), 
-        max_per_gpu_rate=20, 
-        esp=0.05, 
-        N=4000, 
-        max_cpu_count=28
-    )
-    print(result)
+    target_goodput = 22
+    n_init = 500
+    # input 4k
+    # print('Begin test with N=4k')
+    # my_goodput_dict = {}
+    # for i in range(5):
+    #     start_time = time.perf_counter()
+    #     result = main(
+    #         model_type=ModelTypes.llama3_70b, 
+    #         attainment=(600, 100, 95, 95), 
+    #         max_per_gpu_rate=20, 
+    #         esp=0.05, 
+    #         N=n_init if i == 0 else 4000, 
+    #         max_cpu_count=28,
+    #         goodput_dict=my_goodput_dict,
+    #         target_goodput=target_goodput,
+    #         seed=i,
+    #     )
+    #     end_time = time.perf_counter()
+    #     print(f'total time for {i}-th run is {end_time-start_time:.3f}s')
+    #     print(f'{my_goodput_dict=}')
+    # print('End test with N=4k')
+
+    print('Begin test with N=5x60xtarget_goodput')
+    my_goodput_dict = {}
+    for i in range(5):
+        start_time = time.perf_counter()
+        result = main(
+            model_type=ModelTypes.llama3_70b, 
+            attainment=(600, 100, 95, 95), 
+            max_per_gpu_rate=20, 
+            esp=0.05, 
+            N=n_init if i == 0 else 5 * 60 * target_goodput, 
+            max_cpu_count=28,
+            goodput_dict=my_goodput_dict,
+            target_goodput=target_goodput,
+            seed=i,
+        )
+        end_time = time.perf_counter()
+        print(f'total time for {i}-th run is {end_time-start_time:.3f}s')
+    print('End test with N=5x60xtarget_goodput')
+    
+    # print(result)
 
