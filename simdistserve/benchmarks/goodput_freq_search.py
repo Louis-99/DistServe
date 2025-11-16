@@ -149,7 +149,7 @@ def run_binary_search(
     return best_per_gpu_rate
 
 def generate_configs_dict():
-    freq_list = np.arange(780, 1830+1, 30).tolist()
+    freq_list = np.arange(360, 1830+1, 30).tolist()
     # freq_list = np.arange(780, 1830+1, 75).tolist()
     # freq_list = np.arange(780, 1830+1, 150).tolist()
     # freq_list = np.arange(780, 1830+1, 300).tolist()
@@ -255,19 +255,21 @@ def main(
         result = dict(result)
 
         # update goodput dict
-        for config, (goodput, _) in result.items():
-            goodput *= config[0] + config[1]
-            if config in goodput_dict.keys():
-                goodput_dict[config] += GOODPUT_DICT_UPDATE_ALPHA * (goodput - goodput_dict[config])
-            else:
-                goodput_dict[config] = goodput
+        if goodput_dict is not None:
+            for config, (goodput, _) in result.items():
+                goodput *= config[0] + config[1]
+                if config in goodput_dict.keys():
+                    goodput_dict[config] += GOODPUT_DICT_UPDATE_ALPHA * (goodput - goodput_dict[config])
+                else:
+                    goodput_dict[config] = goodput
         
         return result
     
 
 if __name__ == '__main__':
     target_goodput = 22
-    n_init = 500
+    # n_init = 4000
+    n_init = 10000
     # input 4k
     # print('Begin test with N=4k')
     # my_goodput_dict = {}
@@ -300,12 +302,14 @@ if __name__ == '__main__':
             esp=0.05, 
             N=n_init if i == 0 else 5 * 60 * target_goodput, 
             max_cpu_count=28,
-            goodput_dict=my_goodput_dict,
-            target_goodput=target_goodput,
+            # goodput_dict=my_goodput_dict,
+            # target_goodput=target_goodput,
             seed=i,
         )
         end_time = time.perf_counter()
+        print(result)
         print(f'total time for {i}-th run is {end_time-start_time:.3f}s')
+        break
     print('End test with N=5x60xtarget_goodput')
     
     # print(result)

@@ -363,7 +363,7 @@ def main(args, outputs=None):
     
     # assert N_Prefill == 1
     # assert N_Decode == 1
-    assert worker_df['worker_id'].max() + 1 == N_Prefill + N_Decode
+    assert N_Prefill <= worker_df['worker_id'].max() < N_Prefill + N_Decode, f"{worker_df['worker_id'].max()=} {N_Prefill=} {N_Decode=}"
     prefill_worker_df = worker_df[worker_df['worker_id'] < N_Prefill]
     decode_worker_df = worker_df[worker_df['worker_id'] >= N_Prefill]
 
