@@ -32,6 +32,14 @@ from simdistserve.estimators.power_estimator import get_prefill_idle_power_inter
 from simdistserve.envs import get_skip_prefill, get_skip_decode, SCALE_ARRIVAL_TIME, IGNORE_FIRST_AND_LAST_QUARTER
 from simdistserve.envs import set_gpu_freq, set_skip_decode, set_skip_prefill
 
+def freq_list_type_func(arg: str):
+    freq_list = list(map(int, arg.split(',')))
+    if len(freq_list) == 0:
+        return None
+    elif len(freq_list) == 1:
+        return freq_list[0]
+    else:
+        return freq_list
 
 def parse_args(args_=None):
     parser = argparse.ArgumentParser(description='Simulation: vLLM, DistServe')
@@ -88,6 +96,8 @@ def parse_args(args_=None):
     parser.add_argument('--freq', type=int)
     parser.add_argument('--skip-prefill', type=int)
     parser.add_argument('--skip-decode', type=int)
+    parser.add_argument('--prefill-freq', type=freq_list_type_func)
+    parser.add_argument('--decode-freq', type=freq_list_type_func)
 
 
 
@@ -122,6 +132,10 @@ def load_workload(workload: str, N, rate, cv, seed, process: Literal["fixed", "g
         check_dataset_existence(dataset_file)
         requests = sample_requests(dataset_file, N)
 
+        print(np.array(requests))
+        np.savetxt('sample0.csv', np.array(requests))
+        exit(0)
+
         if process == 'fixed':
             delay = 1 / rate * 1000  # ms
             arrival = get_fixed_interarrival(N, delay)
@@ -139,9 +153,20 @@ def load_workload(workload: str, N, rate, cv, seed, process: Literal["fixed", "g
             arrival_time_list = [d['start_time'] for d in data]
         elif workload.endswith('.csv'):
             df = pd.read_csv(workload)
-            input_len_list = df['input_len'].to_list()
-            output_len_list = df['output_len'].to_list()
-            arrival_time_list = df['time'].to_numpy()
+            if 'input_len' in df.keys():
+                input_len_list = df['input_len'].to_list()
+            else:
+                input_len_list = df['num_prefill_tokens'].to_list()
+
+            if 'output_len' in df.keys():
+                output_len_list = df['output_len'].to_list()
+            else:
+                output_len_list = df['num_decode_tokens'].to_list()
+            
+            if 'time' in df.keys():
+                arrival_time_list = df['time'].to_numpy()
+            else:
+                arrival_time_list = df['arrived_at'].to_numpy()
             assert len(input_len_list) == len(arrival_time_list)
         
         request_pairs = list(zip(input_len_list, output_len_list))
@@ -150,7 +175,8 @@ def load_workload(workload: str, N, rate, cv, seed, process: Literal["fixed", "g
 
         absolute_arrival = np.array(arrival_time_list)
         if SCALE_ARRIVAL_TIME:
-            absolute_arrival *= rate
+            cur_rate = len(absolute_arrival) / absolute_arrival[-1]
+            absolute_arrival *= rate / cur_rate
         arrival = convert_absolutearrival_to_interarrival(absolute_arrival)
         assert len(requests) == len(absolute_arrival)
         assert len(requests) == len(arrival)
@@ -178,6 +204,9 @@ def main(args, outputs=None):
     PP_decode = args.pp_decode
     N_Prefill = args.n_prefill
     N_Decode = args.n_decode
+
+    prefill_freq = args.prefill_freq
+    decode_freq = args.decode_freq
 
     if args.freq is not None:
         set_gpu_freq(args.freq)
@@ -242,7 +271,8 @@ def main(args, outputs=None):
             prefill_max_batch_size=10 ** 7,  # inf
             decode_max_batch_size=10 ** 7,  # inf
             # prefill_max_tokens=prefill_max_tokens,
-            prefill_max_tokens=1024*8,
+            # prefill_max_tokens=1024*8,
+            prefill_max_tokens=1024*4,
             decode_max_tokens=decode_max_tokens,
             enable_chunked_prefill=False,
             # enable_chunked_prefill=True,
@@ -253,6 +283,8 @@ def main(args, outputs=None):
             env=env, PP_prefill=PP_prefill, PP_decode=PP_decode,
             N_prefill_instance=N_Prefill, N_decode_instance=N_Decode,
             worker_configs=worker_config,
+            freq_prefill=prefill_freq,
+            freq_decode=decode_freq,
         )
     else:
         raise ValueError(f"Unknown backend: {args.backend}")
@@ -368,8 +400,14 @@ def main(args, outputs=None):
     decode_worker_df = worker_df[worker_df['worker_id'] >= N_Prefill]
 
     if not get_skip_prefill():
-        prefill_idle_power = get_prefill_idle_power_interp(TP_Prefill, model_type)
-        prefill_worker_df.loc[:, 'power'] = prefill_worker_df['power'].clip(lower=prefill_idle_power) 
+        for prefill_id in prefill_worker_df['worker_id'].unique():
+            if isinstance(prefill_freq, list):
+                cur_freq = prefill_freq[prefill_id]
+            else:
+                cur_freq = prefill_freq
+            prefill_idle_power = get_prefill_idle_power_interp(TP_Prefill, model_type, freq=cur_freq)
+            prefill_worker_df.loc[prefill_worker_df['worker_id'] == prefill_id, 'power'] = \
+                prefill_worker_df.loc[prefill_worker_df['worker_id'] == prefill_id, 'power'].clip(lower=prefill_idle_power) 
         if IGNORE_FIRST_AND_LAST_QUARTER:
             prefill_total_energy = 0
             for worker_id in prefill_worker_df['worker_id'].unique():

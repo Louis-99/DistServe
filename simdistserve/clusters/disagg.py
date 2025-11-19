@@ -16,7 +16,17 @@ class DisaggCluster:
         PP_prefill: int = 1,
         PP_decode: int = 1,
         worker_configs: 'Optional[WorkerConfig]' = None,
+        freq_prefill: None|int|list[int] = None,
+        freq_decode: None|int|list[int] = None,
     ):
+        assert isinstance(freq_prefill, None|int) or len(freq_prefill) == N_prefill_instance
+        assert isinstance(freq_decode, None|int) or len(freq_decode) == N_decode_instance
+
+        if isinstance(freq_prefill, None|int):
+            freq_prefill = [freq_prefill] * N_prefill_instance
+        if isinstance(freq_decode, None|int):
+            freq_decode = [freq_decode] * N_decode_instance
+
         prefill_instances = []
         decode_instances = []
 
@@ -33,7 +43,7 @@ class DisaggCluster:
         for inst_id in range(N_prefill_instance):
             instance = []
             for i, p in enumerate(range(PP_prefill)):
-                worker = Worker(env, worker_id, cluster=self, pipe_rank=i, **worker_kwargs)
+                worker = Worker(env, worker_id, cluster=self, pipe_rank=i, freq=freq_prefill[inst_id], **worker_kwargs)
                 instance.append(worker)
                 worker_id += 1
 
@@ -47,7 +57,7 @@ class DisaggCluster:
         for inst_id in range(N_decode_instance):
             instance = []
             for i, p in enumerate(range(PP_decode)):
-                worker = Worker(env, worker_id, cluster=self, pipe_rank=i, **worker_kwargs)
+                worker = Worker(env, worker_id, cluster=self, pipe_rank=i, freq=freq_decode[inst_id], **worker_kwargs)
                 instance.append(worker)
                 worker_id += 1
 

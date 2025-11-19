@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from simdistserve.base.scheduler import Scheduler
     from simdistserve.base.request import Request
 
-from simdistserve.envs import get_skip_prefill, get_skip_decode
+from simdistserve.envs import get_skip_prefill, get_skip_decode, get_gpu_freq
 
 # TODO: (Refactor) Make this a configuration.
 class WorkerConfig(TypedDict):
@@ -53,6 +53,7 @@ class Worker:
         decode_max_tokens=10 ** 7,
         decode_back_pressure: float = 0.9,
         engine_type: Literal["distserve", "vllm"] = "distserve",
+        freq: None|int = None,
     ):
         
         self.env = env
@@ -62,6 +63,12 @@ class Worker:
         self.is_last_in_pipeline = is_last_in_pipeline
         self.next_worker: 'Optional[Worker]' = None
         self.model_type = model_type
+
+        if freq is None:
+            freq = get_gpu_freq()
+        self.freq = freq
+
+        print(f'Worker {wid=} {freq=}')
 
         # TODO: (Deprecate) TP should be deprecate in favor of TP_prefill and TP_decode.
         self.TP = TP
@@ -369,6 +376,7 @@ class Worker:
                 prefill_len_list=[x.current_prefill_lens for x in prefill_items],
                 engine_type=self.engine_type,
                 time_since_last_batch=self.env.now - self.last_prefill_end_time_env,
+                freq=self.freq,
             )
         else:
             power = 0
@@ -396,6 +404,7 @@ class Worker:
                 time_since_last_batch=self.env.now - self.last_prefill_end_time_env,
                 # __prefill_reqs=prefill_items,
                 # __decode_reqs=decode_reqs,
+                freq=self.freq,
             )
             num_tokens = sum(x.current_context_len for x in (prefill_items + decode_reqs))
             if self.is_first_in_pipeline:
@@ -424,6 +433,7 @@ class Worker:
             model_type=self.model_type, TP=self.TP_Decode,
             token_generated_list=_token_generated_list,
             engine_type=self.engine_type,
+            freq=self.freq,
         )
 
         self._log_event(
@@ -437,6 +447,7 @@ class Worker:
                 model_type=self.model_type, TP=self.TP_Decode,
                 token_generated_list=_token_generated_list,
                 engine_type=self.engine_type,
+                freq=self.freq,
             )
             num_tokens = sum(x.current_context_len for x in decode_reqs)
             if self.is_first_in_pipeline:

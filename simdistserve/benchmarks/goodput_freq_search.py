@@ -247,6 +247,8 @@ def main(
                     )
                     proc.start()
                     processes_dict[key].append(proc)    
+                    break
+                break
              
             for processes in processes_dict.values():
                 for p in processes:
@@ -293,14 +295,17 @@ if __name__ == '__main__':
 
     print('Begin test with N=5x60xtarget_goodput')
     my_goodput_dict = {}
-    for i in range(5):
+    # for i in range(5):
+    # for i in range(2, 6):
+    for i in [5]:
         start_time = time.perf_counter()
         result = main(
             model_type=ModelTypes.llama3_70b, 
             attainment=(600, 100, 95, 95), 
             max_per_gpu_rate=20, 
             esp=0.05, 
-            N=n_init if i == 0 else 5 * 60 * target_goodput, 
+            # N=n_init if i == 0 else 5 * 60 * target_goodput, 
+            N=n_init, 
             max_cpu_count=28,
             # goodput_dict=my_goodput_dict,
             # target_goodput=target_goodput,
@@ -309,7 +314,6 @@ if __name__ == '__main__':
         end_time = time.perf_counter()
         print(result)
         print(f'total time for {i}-th run is {end_time-start_time:.3f}s')
-        break
     print('End test with N=5x60xtarget_goodput')
     
     # print(result)
