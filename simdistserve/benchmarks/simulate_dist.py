@@ -29,7 +29,7 @@ from simdistserve.constants import ModelTypes
 from simdistserve.estimators.memory_estimator import get_max_num_tokens, is_model_runnable
 
 from simdistserve.estimators.power_estimator import get_prefill_idle_power_interp
-from simdistserve.envs import get_skip_prefill, get_skip_decode, SCALE_ARRIVAL_TIME, IGNORE_FIRST_AND_LAST_QUARTER
+from simdistserve.envs import get_skip_prefill, get_skip_decode, SCALE_ARRIVAL_TIME, IGNORE_FIRST_AND_LAST_QUARTER, LIMIT_NUM_REQ
 from simdistserve.envs import set_gpu_freq, set_skip_decode, set_skip_prefill
 
 def freq_list_type_func(arg: str):
@@ -118,7 +118,8 @@ def check_dataset_existence(x):
     return
 
 
-def load_workload(workload: str, N, rate, cv, seed, process: Literal["fixed", "gamma"]):
+def load_workload(workload: str|pd.DataFrame, N, rate, cv, seed, process: Literal["fixed", "gamma"]):
+    print(f'load workload {workload}')
     random.seed(seed)
     np.random.seed(seed)
     if workload in ['sharegpt', 'longbench', 'humaneval']:
@@ -132,10 +133,6 @@ def load_workload(workload: str, N, rate, cv, seed, process: Literal["fixed", "g
         check_dataset_existence(dataset_file)
         requests = sample_requests(dataset_file, N)
 
-        print(np.array(requests))
-        np.savetxt('sample0.csv', np.array(requests))
-        exit(0)
-
         if process == 'fixed':
             delay = 1 / rate * 1000  # ms
             arrival = get_fixed_interarrival(N, delay)
@@ -145,31 +142,43 @@ def load_workload(workload: str, N, rate, cv, seed, process: Literal["fixed", "g
     else:
         # Open the file to get the JSON data
         # [ { "start_time": int, "prompt_len": int, "output_len":int,  } ]
-        if workload.endswith('.json'):
+
+        if isinstance(workload, str|os.PathLike) and workload.endswith('.json'):
             with open(workload, 'r') as f:
                 data = json.load(f)
-            input_len_list = [d['prompt_len'] for d in data]
-            output_len_list = [d['output_len'] for d in data]
-            arrival_time_list = [d['start_time'] for d in data]
-        elif workload.endswith('.csv'):
-            df = pd.read_csv(workload)
-            if 'input_len' in df.keys():
-                input_len_list = df['input_len'].to_list()
+            if not LIMIT_NUM_REQ:
+                N = len(data)
+            input_len_list = [d['prompt_len'] for i, d in enumerate(data) if i < N]
+            output_len_list = [d['output_len'] for i, d in enumerate(data) if i < N]
+            arrival_time_list = [d['start_time'] for i, d in enumerate(data) if i < N]
+        else:
+            if isinstance(workload, str|os.PathLike): 
+                assert workload.endswith('.csv')
+                df = pd.read_csv(workload)
             else:
-                input_len_list = df['num_prefill_tokens'].to_list()
+                assert isinstance(workload, pd.DataFrame)
+                df = workload
+            if not LIMIT_NUM_REQ:
+                N = len(df)
+            if 'input_len' in df.keys():
+                input_len_list = df['input_len'][:N].to_numpy()
+            else:
+                input_len_list = df['num_prefill_tokens'][:N].to_numpy()
 
             if 'output_len' in df.keys():
-                output_len_list = df['output_len'].to_list()
+                output_len_list = df['output_len'][:N].to_numpy()
             else:
-                output_len_list = df['num_decode_tokens'].to_list()
+                output_len_list = df['num_decode_tokens'][:N].to_numpy()
             
             if 'time' in df.keys():
-                arrival_time_list = df['time'].to_numpy()
+                arrival_time_list = df['time'][:N].to_numpy()
             else:
-                arrival_time_list = df['arrived_at'].to_numpy()
+                arrival_time_list = df['arrived_at'][:N].to_numpy()
             assert len(input_len_list) == len(arrival_time_list)
         
         request_pairs = list(zip(input_len_list, output_len_list))
+
+
             
         requests = convert_pd_pair_to_request(request_pairs)
 
@@ -184,17 +193,19 @@ def load_workload(workload: str, N, rate, cv, seed, process: Literal["fixed", "g
     if get_skip_decode():
         for req in requests:
             req.output_lens = 1
+    
+    print(f'finished load workload {workload}')
     return requests, arrival
 
 
-def main(args, outputs=None):
+def main(args, outputs=None, workload_df: None|pd.DataFrame = None):
     outputs = outputs if outputs is not None else {}
 
     cv = args.cv
     N = args.N
     rate = args.rate
     seed = args.seed
-    workload: Union[Literal["sharegpt", "longbench", "humaneval"], str] = args.workload
+    workload: pd.DataFrame|str = workload_df if workload_df is not None else args.workload
     model_type = ModelTypes.model_str_to_object(args.model)
     process = args.arrival
 

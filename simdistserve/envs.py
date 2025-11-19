@@ -38,6 +38,7 @@ if OVERWRITE_DECODE_LEN:
 PRINT_EXCEPT_MSG = bool(int(os.getenv('PRINT_EXCEPT_MSG', '0')))
 
 SCALE_ARRIVAL_TIME = bool(int(os.getenv('SCALE_ARRIVAL_TIME', '0')))
+LIMIT_NUM_REQ = bool(int(os.getenv('LIMIT_NUM_REQ', '0')))
 
 OPTIMIZE_ENERGY = bool(int(os.getenv('OPTIMIZE_POWER', '0')))
 

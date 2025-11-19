@@ -108,10 +108,6 @@ def sample_requests(dataset_path: PathLike, num_prompts: int) -> 'list[(int, int
     result = random.sample(dataset, num_prompts)
     result = [(p, d) for (_, p, d) in result]
 
-    # print(np.array(result))
-    # np.savetxt('/export1/liu3882/llm_energy/DistServe/my_script/sample5.csv', np.array(result, dtype=int))
-    # exit(0)
-
     # Generate requests
     requests = [
         Request(

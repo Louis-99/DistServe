@@ -38,6 +38,8 @@ def run_binary_search(
     low_dict: None|dict = None,
     high_dict: None|dict = None,
     seed: int = 0,
+    workload: str = 'sharegpt',
+    workload_df: None|pd.DataFrame = None,
 ):
     N = str(N)
 
@@ -95,11 +97,12 @@ def run_binary_search(
         '--decode-containment', decode_containment,  # P90
         '--decode-target', decode_target,  # ms
         '--model', ModelTypes.formalize_model_name(model_type),
-        '--workload', 'sharegpt',
+        '--workload', workload,
         '--slas', '[]',
         '--slo-scales', '[1]',
         '--backend', 'distserve',
-        '--freq', freq,
+        '--prefill-freq', freq,
+        '--decode-freq', freq,
     ]
 
     first_run = True
@@ -182,6 +185,7 @@ def main(
     goodput_dict: None|dict[tuple, float] = None,
     target_goodput: None|float = None,
     seed: int = 0,
+    workload: str = 'sharegpt',
 ):
     """
     :return result: dict that maps config to the best_per_gpu_rate (int)
@@ -192,6 +196,10 @@ def main(
 
     configs_dict = generate_configs_dict()
     processes_dict: dict[str, list[Process]] = {key: [] for key in configs_dict.keys()}
+
+    workload_df = None
+    if workload.endswith('.csv'):
+        workload_df = pd.read_csv(workload)
 
     # Add a multiproc shared dict
     with Manager() as manager:
@@ -228,7 +236,6 @@ def main(
                         old_goodput = goodput_dict[config]
                         config_N = int(min(1, CONFIG_N_SCALE * old_goodput / target_goodput) * N)
                         config_N = max(500, config_N)
-                    # print(f'{config=} {config_N=}')
 
                     proc = Process(
                         target=run_binary_search,
@@ -243,12 +250,12 @@ def main(
                             low_dict=low_dict,
                             high_dict=high_dict,
                             seed=seed,
+                            workload=workload,
+                            workload_df=workload_df,
                         )
                     )
                     proc.start()
                     processes_dict[key].append(proc)    
-                    break
-                break
              
             for processes in processes_dict.values():
                 for p in processes:
@@ -269,52 +276,31 @@ def main(
     
 
 if __name__ == '__main__':
-    target_goodput = 22
-    # n_init = 4000
     n_init = 10000
-    # input 4k
-    # print('Begin test with N=4k')
-    # my_goodput_dict = {}
-    # for i in range(5):
-    #     start_time = time.perf_counter()
-    #     result = main(
-    #         model_type=ModelTypes.llama3_70b, 
-    #         attainment=(600, 100, 95, 95), 
-    #         max_per_gpu_rate=20, 
-    #         esp=0.05, 
-    #         N=n_init if i == 0 else 4000, 
-    #         max_cpu_count=28,
-    #         goodput_dict=my_goodput_dict,
-    #         target_goodput=target_goodput,
-    #         seed=i,
-    #     )
-    #     end_time = time.perf_counter()
-    #     print(f'total time for {i}-th run is {end_time-start_time:.3f}s')
-    #     print(f'{my_goodput_dict=}')
-    # print('End test with N=4k')
 
-    print('Begin test with N=5x60xtarget_goodput')
-    my_goodput_dict = {}
-    # for i in range(5):
-    # for i in range(2, 6):
-    for i in [5]:
+    workload_list = [
+        "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps12_req-cnt43200.csv",
+        "/export1/liu3882/llm_energy/vllm_script/trace/burstiness_0.5/trace_seed1k_rps12_n43200.csv",
+        "/export1/liu3882/llm_energy/vllm_script/trace/burstiness_1.0/trace_seed1k_rps12_n43200.csv",
+        "/export1/liu3882/llm_energy/vllm_script/trace/burstiness_2.0/trace_seed1k_rps12_n43200.csv",
+    ]
+
+    for i, workload in enumerate(workload_list):
+        print(f"{workload=}")
         start_time = time.perf_counter()
         result = main(
             model_type=ModelTypes.llama3_70b, 
             attainment=(600, 100, 95, 95), 
             max_per_gpu_rate=20, 
             esp=0.05, 
-            # N=n_init if i == 0 else 5 * 60 * target_goodput, 
             N=n_init, 
             max_cpu_count=28,
-            # goodput_dict=my_goodput_dict,
-            # target_goodput=target_goodput,
             seed=i,
+            workload=workload,
         )
         end_time = time.perf_counter()
         print(result)
         print(f'total time for {i}-th run is {end_time-start_time:.3f}s')
-    print('End test with N=5x60xtarget_goodput')
     
     # print(result)
 
