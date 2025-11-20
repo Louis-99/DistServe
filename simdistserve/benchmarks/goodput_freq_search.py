@@ -1,6 +1,6 @@
 import os
 import time
-from multiprocessing import Process, Manager
+from multiprocessing import Process, Manager, Lock
 from time import sleep
 import math
 
@@ -40,6 +40,7 @@ def run_binary_search(
     seed: int = 0,
     workload: str = 'sharegpt',
     workload_df: None|pd.DataFrame = None,
+    lock=None,
 ):
     N = str(N)
 
@@ -71,22 +72,18 @@ def run_binary_search(
 
     prefill_target, decode_target, prefill_containment, decode_containment = containment_targets
 
-    if low_dict is not None:
-        for (tp_p, tp_d, f), prev_rate in low_dict.copy().items():
-            if tp_p == config[0] and tp_d == config[1]:
-                if f < freq and prev_rate > low:
-                    low = prev_rate
+    with lock:
+        if low_dict is not None:
+            for (tp_p, tp_d, f), prev_rate in low_dict.copy().items():
+                if tp_p == config[0] and tp_d == config[1]:
+                    if f < freq and prev_rate > low:
+                        low = prev_rate
 
-    if high_dict is not None:
-        for (tp_p, tp_d, f), prev_rate in high_dict.copy().items():
-            if tp_p == config[0] and tp_d == config[1]:
-                if f > freq and prev_rate < high:
-                    high = prev_rate
-
-    # print(f'{config=} {low=:.2f} {high=:.2f}')
-
-
-    best_per_gpu_rate = 0
+        if high_dict is not None:
+            for (tp_p, tp_d, f), prev_rate in high_dict.copy().items():
+                if tp_p == config[0] and tp_d == config[1]:
+                    if f > freq and prev_rate < high:
+                        high = prev_rate
 
     fixed_args = [
         '--arrival', 'poisson',
@@ -131,13 +128,18 @@ def run_binary_search(
         if not success:
             # The experiment not passing the attainment threshold
             high = this_rate
-            high_dict[config] = this_rate
+            if high_dict is not None:
+                with lock:
+                    high_dict[config] = this_rate
+            best_per_gpu_rate = (high + low) / 2
             continue
 
         # Experiment passed the attainment threshold
         low = this_rate
-        low_dict[config] = this_rate
-        best_per_gpu_rate = this_rate
+        if low_dict is not None:
+            with lock:
+                low_dict[config] = this_rate
+        best_per_gpu_rate = (high + low) / 2
         pass
     if result is not None:
         assert prefill_energy is not None
@@ -148,7 +150,8 @@ def run_binary_search(
             total_energy = decode_energy
         else:
             total_energy = prefill_energy + decode_energy
-        result[config] = (best_per_gpu_rate, total_energy) 
+        with lock:
+            result[config] = (best_per_gpu_rate, total_energy) 
     return best_per_gpu_rate
 
 def generate_configs_dict():
@@ -206,6 +209,7 @@ def main(
         result = manager.dict()
         low_dict = manager.dict()
         high_dict = manager.dict()
+        lock = Lock()
         with tqdm(total=sum(map(len, configs_dict.values()))) as pbar:
             while len(configs_dict) > 0:
                 for key, configs in configs_dict.copy().items():
@@ -252,6 +256,7 @@ def main(
                             seed=seed,
                             workload=workload,
                             workload_df=workload_df,
+                            lock=lock,
                         )
                     )
                     proc.start()
@@ -279,10 +284,11 @@ if __name__ == '__main__':
     n_init = 10000
 
     workload_list = [
-        "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps12_req-cnt43200.csv",
-        "/export1/liu3882/llm_energy/vllm_script/trace/burstiness_0.5/trace_seed1k_rps12_n43200.csv",
-        "/export1/liu3882/llm_energy/vllm_script/trace/burstiness_1.0/trace_seed1k_rps12_n43200.csv",
-        "/export1/liu3882/llm_energy/vllm_script/trace/burstiness_2.0/trace_seed1k_rps12_n43200.csv",
+        "sharegpt"
+        # "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps12_req-cnt43200.csv",
+        # "/export1/liu3882/llm_energy/vllm_script/trace/burstiness_0.5/trace_seed1k_rps12_n43200.csv",
+        # "/export1/liu3882/llm_energy/vllm_script/trace/burstiness_1.0/trace_seed1k_rps12_n43200.csv",
+        # "/export1/liu3882/llm_energy/vllm_script/trace/burstiness_2.0/trace_seed1k_rps12_n43200.csv",
     ]
 
     for i, workload in enumerate(workload_list):
@@ -291,7 +297,7 @@ if __name__ == '__main__':
         result = main(
             model_type=ModelTypes.llama3_70b, 
             attainment=(600, 100, 95, 95), 
-            max_per_gpu_rate=20, 
+            max_per_gpu_rate=40, 
             esp=0.05, 
             N=n_init, 
             max_cpu_count=28,
