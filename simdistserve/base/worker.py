@@ -68,8 +68,6 @@ class Worker:
             freq = get_gpu_freq()
         self.freq = freq
 
-        print(f'Worker {wid=} {freq=}')
-
         # TODO: (Deprecate) TP should be deprecate in favor of TP_prefill and TP_decode.
         self.TP = TP
         self.TP_Prefill = TP_Prefill

@@ -119,7 +119,6 @@ def check_dataset_existence(x):
 
 
 def load_workload(workload: str|pd.DataFrame, N, rate, cv, seed, process: Literal["fixed", "gamma"]):
-    print(f'load workload {workload}')
     random.seed(seed)
     np.random.seed(seed)
     if workload in ['sharegpt', 'longbench', 'humaneval']:
@@ -194,7 +193,6 @@ def load_workload(workload: str|pd.DataFrame, N, rate, cv, seed, process: Litera
         for req in requests:
             req.output_lens = 1
     
-    print(f'finished load workload {workload}')
     return requests, arrival
 
 
