@@ -184,7 +184,10 @@ def load_workload(workload: str|pd.DataFrame, N, rate, cv, seed, process: Litera
         absolute_arrival = np.array(arrival_time_list)
         if SCALE_ARRIVAL_TIME:
             cur_rate = len(absolute_arrival) / absolute_arrival[-1]
-            absolute_arrival *= rate / cur_rate
+            # cur_rate * old_arri == rate * new_arri
+            # new_arri == old_arri * cur_rate / rate 
+            absolute_arrival *= cur_rate / rate 
+            assert rate * 0.99 < len(absolute_arrival) / absolute_arrival[-1] < rate * 1.01
         arrival = convert_absolutearrival_to_interarrival(absolute_arrival)
         assert len(requests) == len(absolute_arrival)
         assert len(requests) == len(arrival)
