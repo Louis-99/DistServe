@@ -211,11 +211,13 @@ class Worker:
         watermark = 1.0 # fixed by yunzhao
         decode_max_tokens = self.decode_max_tokens * watermark # fixed by yunzhao
 
-        for req in self.transfer_queue.copy():
-            if not req.check_KV_finished(self.env.now):
-                decode_max_tokens -= self.cal_num_block_tokens(req.current_context_len + 1)
-            else:
-                self.transfer_queue.remove(req)
+        decode_max_batch_size = self.decode_max_batch_size
+
+        # for req in self.transfer_queue.copy():
+        #     if not req.check_KV_finished(self.env.now):
+        #         decode_max_tokens -= self.cal_num_block_tokens(req.current_context_len + 1)
+        #     else:
+        #         self.transfer_queue.remove(req)
 
         # decode_max_tokens = 50000 # fixed by yunzhao
         _decode_len = min(remaining_tok_in_batch, len(self.decode_queue))
@@ -248,13 +250,22 @@ class Worker:
             # at this point only normal decode requests are left
             if self.cal_num_block_tokens(req.current_context_len + 1) > decode_max_tokens:
                 break
+            if decode_max_batch_size <= 0:
+                break
+
             decode_max_tokens -= self.cal_num_block_tokens(req.current_context_len + 1)
+            decode_max_batch_size -= 1
             decode_reqs.append(req)
             self.decode_queue.remove(req)
             if decode_queue_index >= len(self.decode_queue):
                 break
         for r in decode_reqs:
             r.do_decode(wid=self.wid)
+
+        # TODO: (Yunzhao) if a preemption happen to a requests, it will affect TPOT of other requests
+        # This basic means this configuration with this RPS is not usable. 
+        # We should add code to detect this and avoid these RPS
+        #  
         # if decode_max_tokens < 0 or \
         #     any(req.state == 'decode' for req in self.decode_queue):
         #     print("PREEMPTED!!!!!!!!!!")
