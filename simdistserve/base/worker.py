@@ -202,7 +202,7 @@ class Worker:
             self.global_scheduler.schedule_decode(item)
         return
 
-    def _enter_decodes(self, remaining_tok_in_batch: int) -> 'List[Request]':
+    def _enter_decodes(self, remaining_tok_in_batch: int) -> 'tuple[List[Request], int]':
         # decode_max_tokens
 
         # Acceptable decode requests is capped by the remaining allowed tokens in this batch.
@@ -221,7 +221,7 @@ class Worker:
 
         # decode_max_tokens = 50000 # fixed by yunzhao
         _decode_len = min(remaining_tok_in_batch, len(self.decode_queue))
-        decode_reqs = []
+        decode_reqs: list[Request] = []
         decode_queue_index = 0
         for i in range(_decode_len):
             if decode_queue_index >= len(self.decode_queue):
@@ -259,17 +259,25 @@ class Worker:
             self.decode_queue.remove(req)
             if decode_queue_index >= len(self.decode_queue):
                 break
+
+        num_recompute = 0
         for r in decode_reqs:
+            if r.state == 'evicted':
+                # print('RECOMPUTE!!!!!!')
+                num_recompute += 1
             r.do_decode(wid=self.wid)
+            r.state = 'decode'
 
         # TODO: (Yunzhao) if a preemption happen to a requests, it will affect TPOT of other requests
         # This basic means this configuration with this RPS is not usable. 
         # We should add code to detect this and avoid these RPS
         #  
-        # if decode_max_tokens < 0 or \
-        #     any(req.state == 'decode' for req in self.decode_queue):
-        #     print("PREEMPTED!!!!!!!!!!")
-        return decode_reqs
+        # if decode_max_tokens < 0:
+        for req in self.decode_queue:
+            # if req.state == 'decode':
+            req.state = 'evicted'
+                # print("PREEMPTED!!!!!!!!!!")
+        return decode_reqs, num_recompute
 
     def _enter_prefill(self) -> 'List[Request]':
         result: 'List[Request]' = []
@@ -368,7 +376,7 @@ class Worker:
         prefill_items: 'List[Request]' = self._enter_prefill()
         if self.enable_chunked_prefill:
             remaining_tok_in_batch = self.prefill_max_tokens - sum(x.current_prefill_lens for x in prefill_items)
-            decode_reqs = self._enter_decodes(remaining_tok_in_batch)
+            decode_reqs, _ = self._enter_decodes(remaining_tok_in_batch)
         else:
             decode_reqs = []
         # TODO: (Refactor) The `num_tokens` may be used inaccurately in the get prefill time function.
@@ -408,7 +416,8 @@ class Worker:
                 decode_bs=len(decode_reqs),
                 pp=self.cluster.PP_prefill,
                 model_type=self.model_type, TP=self.TP_Prefill,
-                prefill_len_list=[x.current_prefill_lens for x in prefill_items],
+                # prefill_len_list=[x.current_prefill_lens for x in prefill_items],
+                prefill_len_list=[x.prefill_lens - x.remain_prefill_lens for x in prefill_items],
                 engine_type=self.engine_type,
                 time_since_last_batch=self.env.now - self.last_prefill_end_time_env,
                 # __prefill_reqs=prefill_items,
@@ -432,7 +441,7 @@ class Worker:
         return
 
     def do_decode(self):
-        decode_reqs = self._enter_decodes(self.decode_max_tokens)
+        decode_reqs, num_recompute_req = self._enter_decodes(self.decode_max_tokens)
         batch_size = len(decode_reqs)
 
         _token_generated_list = [x.current_context_len + 1 for x in decode_reqs]
@@ -463,7 +472,7 @@ class Worker:
                 delay += self.add_ray_overhead(num_tokens)
         else:
             delay = 0
-        yield self.env.timeout(delay)
+        yield self.env.timeout(delay + 10000 * num_recompute_req)
         self._exit_decode(decode_reqs)
         return
 

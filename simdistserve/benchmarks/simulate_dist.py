@@ -280,8 +280,11 @@ def main(args, outputs=None, workload_df: None|pd.DataFrame = None):
         worker_config = WorkerConfig(
             model_type=model_type,
             TP=TP_Prefill, TP_Prefill=TP_Prefill, TP_Decode=TP_Decode,
-            prefill_max_batch_size=10 ** 7,  # inf
-            decode_max_batch_size=10 ** 7,  # inf
+            # prefill_max_batch_size=10 ** 7,  # inf
+            # decode_max_batch_size=10 ** 7,  # inf
+            # TODO: (Yunzhao) expose below two parameter to CLI
+            prefill_max_batch_size=2048, 
+            decode_max_batch_size=2048,
             # prefill_max_tokens=prefill_max_tokens,
             # prefill_max_tokens=1024*8,
             prefill_max_tokens=1024*4,

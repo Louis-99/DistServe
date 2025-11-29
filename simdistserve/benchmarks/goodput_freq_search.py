@@ -42,9 +42,14 @@ def run_binary_search(
     workload_df: None|pd.DataFrame = None,
     lock=None,
 ):
-    N = str(N)
-
     tp_prefill, tp_decode, freq = config
+
+    # TODO: (Yunzhao) temp workaround for TP2 decode because goodput of TP2 decode is too low
+    # Use better method latter
+    if tp_prefill == 0 and tp_decode == 2:
+        N //= 8
+    
+    N = str(N)
 
     skip_decode = (tp_decode <= 0)
     skip_prefill = (tp_prefill <= 0)
@@ -151,11 +156,12 @@ def run_binary_search(
         else:
             total_energy = prefill_energy + decode_energy
         with lock:
-            result[config] = (best_per_gpu_rate, total_energy) 
+            result[config] = (best_per_gpu_rate, total_energy / int(N)) 
     return best_per_gpu_rate
 
 def generate_configs_dict():
     freq_list = np.arange(360, 1830+1, 30).tolist()
+    # freq_list = np.arange(360, 1830+1, 60).tolist()
     # freq_list = np.arange(780, 1830+1, 75).tolist()
     # freq_list = np.arange(780, 1830+1, 150).tolist()
     # freq_list = np.arange(780, 1830+1, 300).tolist()
@@ -284,11 +290,16 @@ if __name__ == '__main__':
     n_init = 10000
 
     workload_list = [
-        "sharegpt"
+        # "sharegpt"
+        "/export1/liu3882/llm_energy/vllm_script/trace/burstiness_0.5/trace_seed1k_rps12_n43200.csv",
         # "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps12_req-cnt43200.csv",
-        # "/export1/liu3882/llm_energy/vllm_script/trace/burstiness_0.5/trace_seed1k_rps12_n43200.csv",
         # "/export1/liu3882/llm_energy/vllm_script/trace/burstiness_1.0/trace_seed1k_rps12_n43200.csv",
         # "/export1/liu3882/llm_energy/vllm_script/trace/burstiness_2.0/trace_seed1k_rps12_n43200.csv",
+        # # Additional trace:
+        # "/export1/liu3882/llm_energy/vllm_script/trace/other/trace_seed1k_rps40_n144000_b0.6.csv",
+        # "/export1/liu3882/llm_energy/vllm_script/trace/other/trace_seed1k_rps40_n144000_b0.7.csv",
+        # "/export1/liu3882/llm_energy/vllm_script/trace/other/trace_seed1k_rps40_n144000_b0.8.csv",
+        # "/export1/liu3882/llm_energy/vllm_script/trace/other/trace_seed1k_rps40_n144000_b0.9.csv",
     ]
 
     for i, workload in enumerate(workload_list):
@@ -296,8 +307,8 @@ if __name__ == '__main__':
         start_time = time.perf_counter()
         result = main(
             model_type=ModelTypes.llama3_70b, 
-            attainment=(600, 100, 95, 95), 
-            max_per_gpu_rate=40, 
+            attainment=(600, 100, 99, 99), 
+            max_per_gpu_rate=20, 
             esp=0.05, 
             N=n_init, 
             max_cpu_count=28,
