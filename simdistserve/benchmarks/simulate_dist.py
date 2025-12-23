@@ -98,6 +98,7 @@ def parse_args(args_=None):
     parser.add_argument('--skip-decode', type=int)
     parser.add_argument('--prefill-freq', type=freq_list_type_func)
     parser.add_argument('--decode-freq', type=freq_list_type_func)
+    parser.add_argument('--rps-adjustment-method', type=str, choices=['stretch', 'sample'], default='stretch')
 
 
 
@@ -118,7 +119,7 @@ def check_dataset_existence(x):
     return
 
 
-def load_workload(workload: str|pd.DataFrame, N, rate, cv, seed, process: Literal["fixed", "gamma"]):
+def load_workload(workload: str|pd.DataFrame, N, rate, cv, seed, process: Literal["fixed", "gamma"], rps_adjustment_method: str):
     random.seed(seed)
     np.random.seed(seed)
     if workload in ['sharegpt', 'longbench', 'humaneval']:
@@ -147,9 +148,9 @@ def load_workload(workload: str|pd.DataFrame, N, rate, cv, seed, process: Litera
                 data = json.load(f)
             if not LIMIT_NUM_REQ:
                 N = len(data)
-            input_len_list = [d['prompt_len'] for i, d in enumerate(data) if i < N]
-            output_len_list = [d['output_len'] for i, d in enumerate(data) if i < N]
-            arrival_time_list = [d['start_time'] for i, d in enumerate(data) if i < N]
+            input_len_array = np.array([d['prompt_len'] for i, d in enumerate(data) if i < N])
+            output_len_array = np.array([d['output_len'] for i, d in enumerate(data) if i < N])
+            arrival_time_array = np.array([d['start_time'] for i, d in enumerate(data) if i < N])
         else:
             if isinstance(workload, str|os.PathLike): 
                 assert workload.endswith('.csv')
@@ -160,35 +161,43 @@ def load_workload(workload: str|pd.DataFrame, N, rate, cv, seed, process: Litera
             if not LIMIT_NUM_REQ:
                 N = len(df)
             if 'input_len' in df.keys():
-                input_len_list = df['input_len'][:N].to_numpy()
+                input_len_array = df['input_len'][:N].to_numpy()
             else:
-                input_len_list = df['num_prefill_tokens'][:N].to_numpy()
+                input_len_array = df['num_prefill_tokens'][:N].to_numpy()
 
             if 'output_len' in df.keys():
-                output_len_list = df['output_len'][:N].to_numpy()
+                output_len_array = df['output_len'][:N].to_numpy()
             else:
-                output_len_list = df['num_decode_tokens'][:N].to_numpy()
+                output_len_array = df['num_decode_tokens'][:N].to_numpy()
             
             if 'time' in df.keys():
-                arrival_time_list = df['time'][:N].to_numpy()
+                arrival_time_array = df['time'][:N].to_numpy()
             else:
-                arrival_time_list = df['arrived_at'][:N].to_numpy()
-            assert len(input_len_list) == len(arrival_time_list)
-        
-        request_pairs = list(zip(input_len_list, output_len_list))
+                arrival_time_array = df['arrived_at'][:N].to_numpy()
+            assert len(input_len_array) == len(arrival_time_array)
 
+        absolute_arrival = np.array(arrival_time_array)
 
-            
+        if SCALE_ARRIVAL_TIME:
+            if rps_adjustment_method == 'stretch':
+                cur_rate = len(absolute_arrival) / absolute_arrival[-1]
+                absolute_arrival *= cur_rate / rate 
+            elif rps_adjustment_method == 'sample':
+                assert not LIMIT_NUM_REQ, "Do not set LIMIT_NUM_REQ if sample method is used"
+                total_num_req = len(absolute_arrival)
+                num_sampled_req = np.round(rate * (absolute_arrival[-1] - absolute_arrival[0])).astype(int)
+                sampled_req_idx = np.round(np.linspace(0, total_num_req-1, num=num_sampled_req)).astype(int)
+                absolute_arrival = absolute_arrival[sampled_req_idx]
+                input_len_array = input_len_array[sampled_req_idx]
+                output_len_array = output_len_array[sampled_req_idx]
+        else:
+            assert rps_adjustment_method != 'sample', 'If you want to sample the trace, you must set SCALE_ARRIVAL_TIME=1'
+        arrival = convert_absolutearrival_to_interarrival(absolute_arrival)
+
+        assert len(input_len_array) == len(output_len_array)
+        request_pairs = list(zip(input_len_array, output_len_array))
         requests = convert_pd_pair_to_request(request_pairs)
 
-        absolute_arrival = np.array(arrival_time_list)
-        if SCALE_ARRIVAL_TIME:
-            cur_rate = len(absolute_arrival) / absolute_arrival[-1]
-            # cur_rate * old_arri == rate * new_arri
-            # new_arri == old_arri * cur_rate / rate 
-            absolute_arrival *= cur_rate / rate 
-            assert rate * 0.99 < len(absolute_arrival) / absolute_arrival[-1] < rate * 1.01
-        arrival = convert_absolutearrival_to_interarrival(absolute_arrival)
         assert len(requests) == len(absolute_arrival)
         assert len(requests) == len(arrival)
     
@@ -216,6 +225,7 @@ def main(args, outputs=None, workload_df: None|pd.DataFrame = None):
     PP_decode = args.pp_decode
     N_Prefill = args.n_prefill
     N_Decode = args.n_decode
+    rps_adjustment_method = args.rps_adjustment_method
 
     prefill_freq = args.prefill_freq
     decode_freq = args.decode_freq
@@ -257,7 +267,7 @@ def main(args, outputs=None, workload_df: None|pd.DataFrame = None):
         decode_max_tokens = get_max_num_tokens(model_type, TP_Decode, PP_decode)
 
     # Setting the seed to sample request / process
-    requests, arrival = load_workload(workload, N, rate, cv, seed, process)
+    requests, arrival = load_workload(workload, N, rate, cv, seed, process, rps_adjustment_method)
 
     # Run simulation
     env = simpy.Environment()
@@ -287,10 +297,10 @@ def main(args, outputs=None, workload_df: None|pd.DataFrame = None):
             decode_max_batch_size=2048,
             # prefill_max_tokens=prefill_max_tokens,
             # prefill_max_tokens=1024*8,
-            prefill_max_tokens=1024*4,
+            prefill_max_tokens=1024*2,
             decode_max_tokens=decode_max_tokens,
-            enable_chunked_prefill=False,
-            # enable_chunked_prefill=True,
+            # enable_chunked_prefill=False,
+            enable_chunked_prefill=True,
             engine_type=args.backend,
         )
 

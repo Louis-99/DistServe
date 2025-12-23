@@ -417,13 +417,16 @@ class Worker:
                 pp=self.cluster.PP_prefill,
                 model_type=self.model_type, TP=self.TP_Prefill,
                 # prefill_len_list=[x.current_prefill_lens for x in prefill_items],
-                prefill_len_list=[x.prefill_lens - x.remain_prefill_lens for x in prefill_items],
+                prefill_len_list=[0.95 * x.current_prefill_lens + 0.05 * (x.prefill_lens - x.remain_prefill_lens) for x in prefill_items],
+                # prefill_len_list=[x.prefill_lens - x.remain_prefill_lens for x in prefill_items],
+                # prefill_len_list=[x.prefill_lens for x in prefill_items],
                 engine_type=self.engine_type,
                 time_since_last_batch=self.env.now - self.last_prefill_end_time_env,
                 # __prefill_reqs=prefill_items,
                 # __decode_reqs=decode_reqs,
                 freq=self.freq,
             )
+            # delay += 5 # 5ms for scheduling
             num_tokens = sum(x.current_context_len for x in (prefill_items + decode_reqs))
             if self.is_first_in_pipeline:
                 delay += self.add_ray_overhead(num_tokens)
