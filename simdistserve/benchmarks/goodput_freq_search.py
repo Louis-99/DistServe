@@ -153,9 +153,9 @@ def run_binary_search(
         if skip_decode:
             energy_per_req = prefill_energy_per_req
         elif skip_prefill:
-            energy_per_req = prefill_energy_per_req
+            energy_per_req = decode_energy_per_req
         else:
-            energy_per_req = prefill_energy_per_req + prefill_energy_per_req
+            energy_per_req = prefill_energy_per_req + decode_energy_per_req
         with lock:
             result[config] = (best_per_gpu_rate, energy_per_req) 
     return best_per_gpu_rate
