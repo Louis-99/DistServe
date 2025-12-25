@@ -95,8 +95,8 @@ def run_binary_search(
     ]
 
     time_durations = []
-    prefill_energy = None
-    decode_energy = None
+    prefill_energy_per_req = None
+    decode_energy_per_req = None
     while (high - low) > esp:
         # print(f"pid={pid}, config={config}, low={low}, high={high}")
         # Run simulation
@@ -108,7 +108,7 @@ def run_binary_search(
         args = parse_args(args)
         try:
             start_time = time.time()
-            is_prefill_contained, is_decode_contained, prefill_energy, decode_energy, df = run_experiment(args)
+            is_prefill_contained, is_decode_contained, prefill_energy_per_req, decode_energy_per_req, df = run_experiment(args)
             end_time = time.time()
             time_durations.append((config, this_rate, end_time - start_time))
         except Exception as e:
@@ -133,21 +133,21 @@ def run_binary_search(
         best_per_gpu_rate = this_rate
         pass
     if result is not None:
-        assert prefill_energy is not None
-        assert decode_energy is not None
+        assert prefill_energy_per_req is not None
+        assert decode_energy_per_req is not None
         assert not get_skip_decode() or not get_skip_prefill()
         if get_skip_decode():
-            total_energy = prefill_energy
+            total_energy_per_req = prefill_energy_per_req
         elif get_skip_prefill():
-            total_energy = decode_energy
+            total_energy_per_req = decode_energy_per_req
         else:
-            total_energy = prefill_energy + decode_energy
+            total_energy_per_req = prefill_energy_per_req + decode_energy_per_req
         if OPTIMIZE_ENERGY:
-            result[config] = N / total_energy
+            result[config] = 1 / total_energy_per_req
         else:
-            result[config] = (best_per_gpu_rate, total_energy) 
+            result[config] = (best_per_gpu_rate, total_energy_per_req) 
     if OPTIMIZE_ENERGY:
-        return N / total_energy
+        return 1 / total_energy_per_req
     else:
         return best_per_gpu_rate
 

@@ -120,7 +120,7 @@ def run_binary_search(
         args = [str(i) for i in args]
         args = parse_args(args)
         try:
-            is_prefill_contained, is_decode_contained, prefill_energy, decode_energy, df = run_experiment(args)
+            is_prefill_contained, is_decode_contained, prefill_energy_per_req, decode_energy_per_req, df = run_experiment(args)
         except Exception as e:
             import traceback
             print(
@@ -148,16 +148,16 @@ def run_binary_search(
         best_per_gpu_rate = (high + low) / 2
         pass
     if result is not None:
-        assert prefill_energy is not None
-        assert decode_energy is not None
+        assert prefill_energy_per_req is not None
+        assert decode_energy_per_req is not None
         if skip_decode:
-            total_energy = prefill_energy
+            energy_per_req = prefill_energy_per_req
         elif skip_prefill:
-            total_energy = decode_energy
+            energy_per_req = prefill_energy_per_req
         else:
-            total_energy = prefill_energy + decode_energy
+            energy_per_req = prefill_energy_per_req + prefill_energy_per_req
         with lock:
-            result[config] = (best_per_gpu_rate, total_energy / int(N)) 
+            result[config] = (best_per_gpu_rate, energy_per_req) 
     return best_per_gpu_rate
 
 def generate_configs_dict():
@@ -305,20 +305,20 @@ if __name__ == '__main__':
         # "/export1/liu3882/llm_energy/vllm_script/trace/other/trace_rsp40_n10000_in256_out256.csv"
 
         # 5min traces wrong scaled
-        # "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps72.69_5min-0.csv",
-        # "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps72.69_5min-1.csv",
-        # "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps72.69_5min-2.csv",
-        # "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps72.69_5min-3.csv",
-        # "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps72.69_5min-4.csv",
-        # "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps72.69_5min-5.csv",
-        # "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps72.69_5min-6.csv",
-        # "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps93.46_5min-0.csv",
-        # "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps93.46_5min-1.csv",
-        # "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps93.46_5min-2.csv",
-        # "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps93.46_5min-3.csv",
-        # "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps93.46_5min-4.csv",
-        # "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps93.46_5min-5.csv",
-        # "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps93.46_5min-6.csv",
+        "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps72.69_5min-0.csv",
+        "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps72.69_5min-1.csv",
+        "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps72.69_5min-2.csv",
+        "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps72.69_5min-3.csv",
+        "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps72.69_5min-4.csv",
+        "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps72.69_5min-5.csv",
+        "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps72.69_5min-6.csv",
+        "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps93.46_5min-0.csv",
+        "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps93.46_5min-1.csv",
+        "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps93.46_5min-2.csv",
+        "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps93.46_5min-3.csv",
+        "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps93.46_5min-4.csv",
+        "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps93.46_5min-5.csv",
+        "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival/azure_2024_code_sharegpt-ctx-len_qps93.46_5min-6.csv",
 
         # 5min traces correctly scaled
 
@@ -329,6 +329,15 @@ if __name__ == '__main__':
         "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival_scale_correctly/azure_2024_code_sharegpt-ctx-len_qps93.46_5min-4.csv",
         "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival_scale_correctly/azure_2024_code_sharegpt-ctx-len_qps93.46_5min-5.csv",
         "/export1/liu3882/llm_energy/vllm_script/trace/azure_code_arrival_scale_correctly/azure_2024_code_sharegpt-ctx-len_qps93.46_5min-6.csv",
+
+        # burstness 0.5 5 min traces
+        "/export1/liu3882/llm_energy/vllm_script/trace/burstiness_0.5/trace_seed1k_rps10_5min.csv",
+        "/export1/liu3882/llm_energy/vllm_script/trace/burstiness_0.5/trace_seed1k_rps25_5min.csv",
+        "/export1/liu3882/llm_energy/vllm_script/trace/burstiness_0.5/trace_seed1k_rps40_5min.csv",
+        "/export1/liu3882/llm_energy/vllm_script/trace/burstiness_0.5/trace_seed1k_rps55_5min.csv",
+        "/export1/liu3882/llm_energy/vllm_script/trace/burstiness_0.5/trace_seed1k_rps70_5min.csv",
+        "/export1/liu3882/llm_energy/vllm_script/trace/burstiness_0.5/trace_seed1k_rps85_5min.csv",
+
     ]
 
     for i, workload in enumerate(workload_list):

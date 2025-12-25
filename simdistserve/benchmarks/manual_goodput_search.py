@@ -78,8 +78,8 @@ def run_binary_search(
     ]
 
     first_run = True
-    prefill_energy = None
-    decode_energy = None
+    prefill_energy_per_req = None
+    decode_energy_per_req = None
     while (high - low) > esp or first_run:
         first_run = False
         # Run simulation
@@ -90,7 +90,7 @@ def run_binary_search(
         args = [str(i) for i in args]
         args = parse_args(args)
         try:
-            is_prefill_contained, is_decode_contained, prefill_energy, decode_energy, df = run_experiment(args)
+            is_prefill_contained, is_decode_contained, prefill_energy_per_req, decode_energy_per_req, df = run_experiment(args)
         except Exception as e:
             import traceback
             print(
@@ -112,8 +112,8 @@ def run_binary_search(
         print(f'{this_rate=}, {low=}, {high=}', flush=True)
         
         
-    total_energy = prefill_energy + decode_energy
-    return best_per_gpu_rate, total_energy / num_gpu
+    total_energy_per_req = prefill_energy_per_req + decode_energy_per_req
+    return best_per_gpu_rate, total_energy_per_req / num_gpu
 
 
     

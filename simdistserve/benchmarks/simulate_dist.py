@@ -98,7 +98,7 @@ def parse_args(args_=None):
     parser.add_argument('--skip-decode', type=int)
     parser.add_argument('--prefill-freq', type=freq_list_type_func)
     parser.add_argument('--decode-freq', type=freq_list_type_func)
-    parser.add_argument('--rps-adjustment-method', type=str, choices=['stretch', 'sample'], default='stretch')
+    parser.add_argument('--rps-adjustment-method', type=str, choices=['stretch', 'sample', 'sample-max'], default='stretch')
 
 
 
@@ -178,20 +178,38 @@ def load_workload(workload: str|pd.DataFrame, N, rate, cv, seed, process: Litera
 
         absolute_arrival = np.array(arrival_time_array)
 
+        SAMPLE_START_IDX=1
+
         if SCALE_ARRIVAL_TIME:
             if rps_adjustment_method == 'stretch':
                 cur_rate = len(absolute_arrival) / absolute_arrival[-1]
                 absolute_arrival *= cur_rate / rate 
             elif rps_adjustment_method == 'sample':
-                assert not LIMIT_NUM_REQ, "Do not set LIMIT_NUM_REQ if sample method is used"
+                # assert not LIMIT_NUM_REQ, "Do not set LIMIT_NUM_REQ if sample method is used"
                 total_num_req = len(absolute_arrival)
                 num_sampled_req = np.round(rate * (absolute_arrival[-1] - absolute_arrival[0])).astype(int)
-                sampled_req_idx = np.round(np.linspace(0, total_num_req-1, num=num_sampled_req)).astype(int)
+                sampled_req_idx = np.round(np.linspace(SAMPLE_START_IDX, total_num_req-1, num=num_sampled_req)).astype(int)
                 absolute_arrival = absolute_arrival[sampled_req_idx]
                 input_len_array = input_len_array[sampled_req_idx]
                 output_len_array = output_len_array[sampled_req_idx]
+            elif rps_adjustment_method == 'sample-max':
+                # assert not LIMIT_NUM_REQ, "Do not set LIMIT_NUM_REQ if sample-max method is used"
+                total_num_req = len(absolute_arrival)
+                num_sampled_req = np.round(rate * (absolute_arrival[-1] - absolute_arrival[0])).astype(int)
+                sampled_req_idx = np.round(np.linspace(SAMPLE_START_IDX, total_num_req-1, num=num_sampled_req)).astype(int)
+                absolute_arrival = absolute_arrival[sampled_req_idx]
+                new_input_len_list = [input_len_array[0]]
+                new_output_len_list = [output_len_array[0]]
+                for prev_idx, cur_idx in zip(sampled_req_idx[:-1], sampled_req_idx[1:]):
+                    if prev_idx == cur_idx:
+                        new_input_len_list.append(input_len_array[cur_idx])
+                        new_output_len_list.append(output_len_array[cur_idx])
+                    new_input_len_list.append(input_len_array[prev_idx+1:cur_idx+1].max())
+                    new_output_len_list.append(output_len_array[prev_idx+1:cur_idx+1].max())
+                input_len_array = np.array(new_input_len_list)
+                output_len_array = np.array(new_output_len_list)
         else:
-            assert rps_adjustment_method != 'sample', 'If you want to sample the trace, you must set SCALE_ARRIVAL_TIME=1'
+            assert 'sample' not in rps_adjustment_method, 'If you want to sample the trace, you must set SCALE_ARRIVAL_TIME=1'
         arrival = convert_absolutearrival_to_interarrival(absolute_arrival)
 
         assert len(input_len_array) == len(output_len_array)
@@ -268,6 +286,9 @@ def main(args, outputs=None, workload_df: None|pd.DataFrame = None):
 
     # Setting the seed to sample request / process
     requests, arrival = load_workload(workload, N, rate, cv, seed, process, rps_adjustment_method)
+
+    # After sample, N may change
+    N = len(arrival)
 
     # Run simulation
     env = simpy.Environment()
@@ -482,7 +503,10 @@ def main(args, outputs=None, workload_df: None|pd.DataFrame = None):
         is_decode_contained = t < decode_target
         pass
 
-    return is_prefill_contained, is_decode_contained, prefill_total_energy, decode_total_energy, df
+    prefill_energy_per_req = prefill_total_energy / N
+    decode_energy_per_req = decode_total_energy / N
+
+    return is_prefill_contained, is_decode_contained, prefill_energy_per_req, decode_energy_per_req, df
 
 
 run_experiment = main
