@@ -18,6 +18,8 @@ class DisaggCluster:
         worker_configs: 'Optional[WorkerConfig]' = None,
         freq_prefill: None|int|list[int] = None,
         freq_decode: None|int|list[int] = None,
+        weights_prefill: None|list[float] = None,
+        weights_decode: None|list[float] = None,
     ):
         assert isinstance(freq_prefill, None|int) or len(freq_prefill) == N_prefill_instance
         assert isinstance(freq_decode, None|int) or len(freq_decode) == N_decode_instance
@@ -67,11 +69,16 @@ class DisaggCluster:
             decode_instances.append(instance)
             pass
 
-        scheduler = Scheduler(env, prefill_heads=[
-            i[0] for i in prefill_instances
-        ], decode_heads=[
-            i[0] for i in decode_instances
-        ])
+        scheduler = Scheduler(env, 
+            prefill_heads=[
+                i[0] for i in prefill_instances
+            ], 
+            decode_heads=[
+                i[0] for i in decode_instances
+            ],
+            prefill_weights=weights_prefill,
+            decode_weights=weights_decode,
+        )
 
         for last_in_prefill in (instances[-1] for instances in prefill_instances):
             last_in_prefill.global_scheduler = scheduler

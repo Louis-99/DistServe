@@ -40,6 +40,14 @@ def freq_list_type_func(arg: str):
         return freq_list[0]
     else:
         return freq_list
+    
+def weight_list_type_func(arg:str):
+    weight_list = list(map(float, arg.split(',')))
+    if len(weight_list) <= 1:
+        return None
+    else:
+        return weight_list
+    
 
 def parse_args(args_=None):
     parser = argparse.ArgumentParser(description='Simulation: vLLM, DistServe')
@@ -98,6 +106,8 @@ def parse_args(args_=None):
     parser.add_argument('--skip-decode', type=int)
     parser.add_argument('--prefill-freq', type=freq_list_type_func)
     parser.add_argument('--decode-freq', type=freq_list_type_func)
+    parser.add_argument('--prefill-weights', type=weight_list_type_func)
+    parser.add_argument('--decode-weights', type=weight_list_type_func)
     parser.add_argument('--rps-adjustment-method', type=str, choices=['stretch', 'sample', 'sample-max'], default='stretch')
 
 
@@ -178,7 +188,7 @@ def load_workload(workload: str|pd.DataFrame, N, rate, cv, seed, process: Litera
 
         absolute_arrival = np.array(arrival_time_array)
 
-        SAMPLE_START_IDX=1
+        SAMPLE_START_IDX=0
 
         if SCALE_ARRIVAL_TIME:
             if rps_adjustment_method == 'stretch':
@@ -247,6 +257,9 @@ def main(args, outputs=None, workload_df: None|pd.DataFrame = None):
 
     prefill_freq = args.prefill_freq
     decode_freq = args.decode_freq
+
+    prefill_weights = args.prefill_weights
+    decode_weights = args.decode_weights
 
     if args.freq is not None:
         set_gpu_freq(args.freq)
@@ -331,6 +344,8 @@ def main(args, outputs=None, workload_df: None|pd.DataFrame = None):
             worker_configs=worker_config,
             freq_prefill=prefill_freq,
             freq_decode=decode_freq,
+            weights_prefill=prefill_weights,
+            weights_decode=decode_weights,
         )
     else:
         raise ValueError(f"Unknown backend: {args.backend}")

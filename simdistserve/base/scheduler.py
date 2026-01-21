@@ -1,18 +1,39 @@
 from queue import Queue
 from typing import List, TYPE_CHECKING, Tuple, Union
+import numpy as np
 
 if TYPE_CHECKING:
     from simdistserve.base.request import Request
     from simdistserve.base.worker import Worker
 
+class WeightedRR:
+    def __init__(self, weights: list[float]):
+        self.virtual_steps = np.array([1 / w for w in weights])
+        self.virtual_times = np.zeros_like(self.virtual_steps)
+    def next(self) -> int:
+        min_idx = np.argmin(self.virtual_steps)
+        self.virtual_times -= self.virtual_steps[min_idx]
+        self.virtual_steps[min_idx] = self.virtual_steps[min_idx]
+        return min_idx
 
 class Scheduler:
-    def __init__(self, env, prefill_heads, decode_heads):
+    def __init__(self, env, prefill_heads, decode_heads, 
+                 prefill_weights: None|list[float] = None,
+                 decode_weights: None|list[float] = None):
         self.env = env
         self._prefill_heads: 'List[Worker]' = prefill_heads
         self._prefill_queues = [i.prefill_queue for i in self._prefill_heads]
         self._decode_heads: 'List[Worker]' = decode_heads
         self._decode_queues = [i.decode_queue for i in self._decode_heads]
+        
+        self._prefill_wrr = None
+        self._decode_wrr = None
+        if prefill_weights is not None:
+            assert len(prefill_weights) == len(prefill_heads)
+            self._prefill_wrr = WeightedRR(prefill_weights)
+        if decode_weights is not None:
+            assert len(decode_weights) == len(decode_heads)
+            self._decode_wrr = WeightedRR(decode_weights)
         pass
 
     @staticmethod
@@ -37,7 +58,12 @@ class Scheduler:
 
     def schedule_prefill(self, req: 'Request'):
         assert req.counter < 0
-        worker, queue = self._find_best_worker_and_queue(self._prefill_heads, queues=self._prefill_queues)
+        if self._prefill_wrr is not None:
+            idx = self._prefill_wrr.next()
+            worker = self._prefill_heads[idx]
+            queue = self._prefill_queues[idx]
+        else:
+            worker, queue = self._find_best_worker_and_queue(self._prefill_heads, queues=self._prefill_queues)
         self._sched_request(req, worker, queue)
         return
 
@@ -48,7 +74,12 @@ class Scheduler:
             req.finish_decode()
             return
 
-        worker, queue = self._find_best_worker_and_queue(self._decode_heads, queues=self._decode_queues)
+        if self._decode_wrr is not None:
+            idx = self._decode_wrr.next()
+            worker = self._decode_heads[idx]
+            queue = self._decode_queues[idx]
+        else:
+            worker, queue = self._find_best_worker_and_queue(self._decode_heads, queues=self._decode_queues)
         req.wait_decode(worker.wid) # Artifact to prevent request having FTL != 0 when decode only.
         self._sched_request(req, worker, queue)
         return
