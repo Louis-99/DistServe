@@ -11,9 +11,9 @@ class WeightedRR:
         self.virtual_steps = np.array([1 / w for w in weights])
         self.virtual_times = np.zeros_like(self.virtual_steps)
     def next(self) -> int:
-        min_idx = np.argmin(self.virtual_steps)
-        self.virtual_times -= self.virtual_steps[min_idx]
-        self.virtual_steps[min_idx] = self.virtual_steps[min_idx]
+        min_idx = np.argmin(self.virtual_times)
+        self.virtual_times -= self.virtual_times[min_idx]
+        self.virtual_times[min_idx] = self.virtual_steps[min_idx]
         return min_idx
 
 class Scheduler:
