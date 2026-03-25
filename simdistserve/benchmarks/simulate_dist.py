@@ -108,7 +108,7 @@ def parse_args(args_=None):
     parser.add_argument('--decode-freq', type=freq_list_type_func)
     parser.add_argument('--prefill-weights', type=weight_list_type_func)
     parser.add_argument('--decode-weights', type=weight_list_type_func)
-    parser.add_argument('--rps-adjustment-method', type=str, choices=['stretch', 'sample', 'sample-max'], default='stretch')
+    parser.add_argument('--rps-adjustment-method', type=str, choices=['stretch', 'sample', 'sample-max-of-range', 'sample-max-prefill', 'sample-max-decode', 'sample-max-total'], default='stretch')
 
 
 
@@ -202,7 +202,56 @@ def load_workload(workload: str|pd.DataFrame, N, rate, cv, seed, process: Litera
                 absolute_arrival = absolute_arrival[sampled_req_idx]
                 input_len_array = input_len_array[sampled_req_idx]
                 output_len_array = output_len_array[sampled_req_idx]
-            elif rps_adjustment_method == 'sample-max':
+            elif rps_adjustment_method == 'sample-max-prefill':
+                # assert not LIMIT_NUM_REQ, "Do not set LIMIT_NUM_REQ if sample-max method is used"
+                total_num_req = len(absolute_arrival)
+                num_sampled_req = np.round(rate * (absolute_arrival[-1] - absolute_arrival[0])).astype(int)
+                init_sampled_req_idx = np.round(np.linspace(SAMPLE_START_IDX, total_num_req-1, num=num_sampled_req, endpoint=False)).astype(int)
+                total_num_possible_subsamples = total_num_req - init_sampled_req_idx[-1]
+                max_sum_prefill = 0
+                for offset in range(total_num_possible_subsamples):
+                    cur_input_len_array = input_len_array[init_sampled_req_idx + offset]
+                    sum_prefill = cur_input_len_array.sum()
+                    if sum_prefill > max_sum_prefill:
+                        max_sum_prefill = sum_prefill
+                        sampled_req_idx = init_sampled_req_idx + offset
+                absolute_arrival = absolute_arrival[sampled_req_idx]
+                input_len_array = input_len_array[sampled_req_idx]
+                output_len_array = output_len_array[sampled_req_idx]
+            elif rps_adjustment_method == 'sample-max-decode':
+                # assert not LIMIT_NUM_REQ, "Do not set LIMIT_NUM_REQ if sample-max method is used"
+                total_num_req = len(absolute_arrival)
+                num_sampled_req = np.round(rate * (absolute_arrival[-1] - absolute_arrival[0])).astype(int)
+                init_sampled_req_idx = np.round(np.linspace(SAMPLE_START_IDX, total_num_req-1, num=num_sampled_req, endpoint=False)).astype(int)
+                total_num_possible_subsamples = total_num_req - init_sampled_req_idx[-1]
+                max_sum_decode = 0
+                for offset in range(total_num_possible_subsamples):
+                    cur_output_len_array = output_len_array[init_sampled_req_idx + offset]
+                    sum_decode = cur_output_len_array.sum()
+                    if sum_decode > max_sum_decode:
+                        max_sum_decode = sum_decode
+                        sampled_req_idx = init_sampled_req_idx + offset
+                absolute_arrival = absolute_arrival[sampled_req_idx]
+                input_len_array = input_len_array[sampled_req_idx]
+                output_len_array = output_len_array[sampled_req_idx]
+            elif rps_adjustment_method == 'sample-max-total':
+                # assert not LIMIT_NUM_REQ, "Do not set LIMIT_NUM_REQ if sample-max method is used"
+                total_num_req = len(absolute_arrival)
+                num_sampled_req = np.round(rate * (absolute_arrival[-1] - absolute_arrival[0])).astype(int)
+                init_sampled_req_idx = np.round(np.linspace(SAMPLE_START_IDX, total_num_req-1, num=num_sampled_req, endpoint=False)).astype(int)
+                total_num_possible_subsamples = total_num_req - init_sampled_req_idx[-1]
+                max_sum_total = 0
+                for offset in range(total_num_possible_subsamples):
+                    cur_input_len_array = input_len_array[init_sampled_req_idx + offset]
+                    cur_output_len_array = output_len_array[init_sampled_req_idx + offset]
+                    sum_total = (cur_input_len_array + cur_output_len_array).sum()
+                    if sum_total > max_sum_total:
+                        max_sum_total = sum_total
+                        sampled_req_idx = init_sampled_req_idx + offset
+                absolute_arrival = absolute_arrival[sampled_req_idx]
+                input_len_array = input_len_array[sampled_req_idx]
+                output_len_array = output_len_array[sampled_req_idx]
+            elif rps_adjustment_method == 'sample-max-of-range':
                 # assert not LIMIT_NUM_REQ, "Do not set LIMIT_NUM_REQ if sample-max method is used"
                 total_num_req = len(absolute_arrival)
                 num_sampled_req = np.round(rate * (absolute_arrival[-1] - absolute_arrival[0])).astype(int)

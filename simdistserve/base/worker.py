@@ -9,7 +9,7 @@ from uuid import UUID
 
 # from simdistserve.estimators.time_estimator import get_prefill_time, get_decode_time
 from simdistserve.estimators.time_estimator import get_decode_time_tree, get_prefill_time_tree
-from simdistserve.estimators.power_estimator import get_decode_power_tree, get_prefill_power_interp
+from simdistserve.estimators.power_estimator import get_decode_power_tree, get_prefill_power_interp, get_prefill_idle_power_interp
 
 if TYPE_CHECKING:
     from simdistserve.base.scheduler import Scheduler
@@ -142,6 +142,9 @@ class Worker:
             prefill_len_list = []
         if decode_len_list is None:
             decode_len_list = []
+        # set idle power for prefill
+        if self.TP_Prefill is not None:
+            power = max(power, get_prefill_idle_power_interp(TP=self.TP_Prefill, model_type=self.model_type, freq=self.freq))
         item = (self.env.now, event, num_tokens, prefill_bs, decode_bs, prefill_len_list, decode_len_list, power)
         self.log.append(item)
         # print(item)
