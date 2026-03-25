@@ -16,6 +16,7 @@ import skl2onnx
 from skl2onnx import convert_sklearn
 from skl2onnx.common.data_types import FloatTensorType
 import onnxruntime as ort
+import lightgbm as lgb
 
 # TODO: (Yunzhao) add new data to json
 def load_distserve_profile_data():
@@ -48,11 +49,11 @@ def load_tree_models():
     pre = None
     MODEL_DIR = Path(__file__).parent / "tree_models"
     dec_path = MODEL_DIR / "decode_model_latency.onnx"
-    pre_path = MODEL_DIR / "prefill_model_latency.onnx"
+    pre_path = MODEL_DIR / "unified_latency_model_tp2_tp4_use_for_prefill.txt"
     if dec_path.exists():
         dec = ort.InferenceSession(dec_path)
     if pre_path.exists():
-        pre = ort.InferenceSession(pre_path)
+        pre = lgb.Booster(model_file=str(pre_path))   
     return dec, pre
 
 
@@ -220,16 +221,19 @@ def get_prefill_time_tree(num_tokens=None, pp=1, bs=1, decode_bs=0, model_type=M
     model_name = ModelTypes.formalize_model_name(model_type)
     num_total_tokens = sum(prefill_len_list)
     for sample_freq in query_freq_list:
-        input_feed = {
-            "model": np.array([[model_name]], dtype=str),
-            "batch_size": np.array([[bs]], dtype=np.float32),
-            "input_len_sum": np.array([[num_total_tokens]], dtype=np.float32),
-            "input_len_mean": np.array([[num_total_tokens / bs]], dtype=np.float32),
-            "input_len_std": np.array([[np.std(prefill_len_list)]], dtype=np.float32),
-            "tp_degree": np.array([[TP]], dtype=np.float32),
-            "freq_mhz": np.array([[sample_freq]], dtype=np.float32),
-        }
-        delay_list.append(pre_model.run(None, input_feed)[0][0][0])
+        input_feed = np.array([[
+            0,
+            0,
+            0,
+            0,
+            np.log1p(bs),
+            np.log1p(num_total_tokens),
+            np.log1p(num_total_tokens / bs),
+            np.std(prefill_len_list),
+            TP,
+            np.log1p(sample_freq)
+        ]])
+        delay_list.append(max(0.005, np.exp(pre_model.predict(input_feed))[0]))
 
     if len(delay_list) == 1:
         return 1000 * delay_list[0]
@@ -275,8 +279,8 @@ def get_decode_time_tree(num_requests, pp=1, model_type=ModelTypes.opt_13b, TP=1
         return 1000 * float(interpn(points=(query_freq_list,), values=delay_list, xi=[freq]))
 
 if __name__ == "__main__":
-    print(get_prefill_time_tree(bs=4, decode_bs=4, model_type=ModelTypes.gemma2_27b, TP=2, prefill_len_list=[512]*4))
-    print(get_prefill_time_tree(bs=3, decode_bs=3, model_type=ModelTypes.gemma2_27b, TP=2, prefill_len_list=[512]*3))
+    print(get_prefill_time_tree(bs=4, decode_bs=4, model_type=ModelTypes.gemma2_27b, TP=2, prefill_len_list=[512, 256, 128, 64]))
+    print(get_prefill_time_tree(bs=3, decode_bs=3, model_type=ModelTypes.gemma2_27b, TP=2, prefill_len_list=[512, 256, 128]))
 
     print(get_decode_time_tree(num_requests=4, decode_bs=4, model_type=ModelTypes.gemma2_27b, TP=2, token_generated_list=[512]*4))
     print(get_decode_time_tree(num_requests=3, decode_bs=3, model_type=ModelTypes.gemma2_27b, TP=2, token_generated_list=[512]*3))
