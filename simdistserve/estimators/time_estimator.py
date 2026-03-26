@@ -233,7 +233,7 @@ def get_prefill_time_tree(num_tokens=None, pp=1, bs=1, decode_bs=0, model_type=M
             TP,
             np.log1p(sample_freq)
         ]])
-        delay_list.append(max(0.005, np.exp(pre_model.predict(input_feed))[0]))
+        delay_list.append(max(0.005, np.exp(pre_model.predict(input_feed, n_jobs=1))[0]))
 
     if len(delay_list) == 1:
         return 1000 * delay_list[0]
