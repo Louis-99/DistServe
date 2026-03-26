@@ -222,14 +222,14 @@ def get_prefill_time_tree(num_tokens=None, pp=1, bs=1, decode_bs=0, model_type=M
     num_total_tokens = sum(prefill_len_list)
     for sample_freq in query_freq_list:
         input_feed = np.array([[
-            0,
-            0,
-            0,
-            0,
             np.log1p(bs),
             np.log1p(num_total_tokens),
             np.log1p(num_total_tokens / bs),
-            np.std(prefill_len_list),
+            np.log1p(np.std(prefill_len_list)),
+            0,
+            0,
+            0,
+            0,
             TP,
             np.log1p(sample_freq)
         ]])
