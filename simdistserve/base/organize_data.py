@@ -104,13 +104,12 @@ def organize_worker_event_df(cluster) -> 'DataFrame[WorkerLog_t]':
 
 def calculate_per_request_latency(
     df: 'DataFrame[RequestLog_t]',
-    output_lens: 'pd.Series' = None
 ) -> 'DataFrame[LatencyDist_t]':
     assert isinstance(output_lens, pd.Series) or output_lens is None, \
         f'output_lens must be a pd.Series, got {type(output_lens)}'
     # First token latency: time between first event and the first `wait_decode`
     # Decoding latency: time between first event and the last event
-    first_event = df[df.event_type == 'init'].groupby('req_id').start_time.min()
+    first_event = df[(df.event_type == 'init') | (df.event_type == 'wait_prefill')].groupby('req_id').start_time.min()
     first_wait_decode = df[df.event_type == 'wait_decode'].groupby('req_id').start_time.min()
     first_do_decode = df[df.event_type == 'do_decode'].groupby('req_id').start_time.min()
     last_event = df[(df.event_type == 'exit_system') | (df.event_type == 'do_decode')].groupby('req_id').end_time.max()
@@ -135,6 +134,7 @@ def calculate_per_request_latency(
         'total_latency': total_latency,
     })
 
+    output_lens = df[(df.event_type == 'do_decode')].groupby('req_id').end_time.count()
     if output_lens is not None:
         # If we have the request information, then we can also calculate the average time per-output-token.
         # Calculate the average time per output token in each request.
