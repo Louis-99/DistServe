@@ -105,7 +105,8 @@ def run_binary_search(
         '--backend', 'distserve',
         '--prefill-freq', freq,
         '--decode-freq', freq,
-        '--rps-adjustment-method', 'sample',
+        '--first-seconds-to-ignore', '20',
+        '--last-seconds-before-ignore', '310',
     ]
 
     first_run = True
@@ -117,17 +118,42 @@ def run_binary_search(
         this_rate = (low + high) / 2
         rate = this_rate * num_gpu
         args = [*fixed_args, *config_args, '--rate', rate, ]
-        args = [str(i) for i in args]
-        args = parse_args(args)
-        try:
-            is_prefill_contained, is_decode_contained, prefill_energy_per_req, decode_energy_per_req, df = run_experiment(args)
-        except Exception as e:
-            import traceback
-            print(
-                f"({pid=}) Error when computing f{tp_prefill=} f{tp_decode=} f{freq=}. This may not be a real error "
-                f"(e.g. bad parallelism strategy). Exception detail: {traceback.format_exc()}."
-            )
-            return None
+        # args = [str(i) for i in args]
+
+        is_prefill_contained = True
+        is_decode_contained = True
+        prefill_energy_per_req = 0
+        decode_energy_per_req = 0
+
+        for sample_method in ['sample', 'sample-max-prefill', 'sample-max-decode', 'sample-max-total']:
+            if skip_decode and sample_method == 'sample-max-decode':
+                continue
+            if skip_prefill and sample_method == 'sample-max-prefill':
+                continue
+            args_sample = args + ['--rps-adjustment-method', sample_method]
+            parsed_args = parse_args([str(i) for i in args_sample])
+            try:
+                cur_is_prefill_contained, cur_is_decode_contained, cur_prefill_energy_per_req, cur_decode_energy_per_req, df = run_experiment(parsed_args)
+                if not cur_is_prefill_contained or not cur_is_decode_contained:
+                    is_prefill_contained = cur_is_prefill_contained 
+                    is_decode_contained = cur_is_decode_contained
+                    prefill_energy_per_req = cur_prefill_energy_per_req
+                    decode_energy_per_req = cur_decode_energy_per_req
+                    break
+                elif skip_decode and cur_prefill_energy_per_req > prefill_energy_per_req:
+                    prefill_energy_per_req = cur_prefill_energy_per_req
+                elif skip_prefill and cur_decode_energy_per_req > decode_energy_per_req:
+                    decode_energy_per_req = cur_decode_energy_per_req
+                elif cur_prefill_energy_per_req + cur_decode_energy_per_req > prefill_energy_per_req + decode_energy_per_req:
+                    prefill_energy_per_req = cur_prefill_energy_per_req
+                    decode_energy_per_req = cur_decode_energy_per_req
+            except Exception as e:
+                import traceback
+                print(
+                    f"({pid=}) Error when computing f{tp_prefill=} f{tp_decode=} f{freq=}. This may not be a real error "
+                    f"(e.g. bad parallelism strategy). Exception detail: {traceback.format_exc()}."
+                )
+                return None
 
         # Update the range
         success = is_prefill_contained and is_decode_contained

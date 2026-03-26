@@ -271,7 +271,9 @@ def get_decode_time_tree(num_requests, pp=1, model_type=ModelTypes.opt_13b, TP=1
             "tp_degree": np.array([[TP]], dtype=np.float32),
             "freq_mhz": np.array([[sample_freq]], dtype=np.float32),
         }
-        delay_list.append(dec_model.run(None, input_feed)[0][0][0])
+        out = dec_model.run(None, input_feed)[0][0][0]
+        out = max(0.005, out)
+        delay_list.append(out)
 
     if len(delay_list) == 1:
         return 1000 * delay_list[0]

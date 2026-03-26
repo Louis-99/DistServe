@@ -109,6 +109,8 @@ def parse_args(args_=None):
     parser.add_argument('--prefill-weights', type=weight_list_type_func)
     parser.add_argument('--decode-weights', type=weight_list_type_func)
     parser.add_argument('--rps-adjustment-method', type=str, choices=['stretch', 'sample', 'sample-max-of-range', 'sample-max-prefill', 'sample-max-decode', 'sample-max-total'], default='stretch')
+    parser.add_argument('--first-seconds-to-ignore', type=int, default=20, help='Number of seconds to ignore at the beginning of the trace when calculating attainment')
+    parser.add_argument('--last-seconds-before-ignore', type=int, default=3600, help='Number of seconds before the end of the trace to ignore when calculating attainment')
 
 
 
@@ -310,6 +312,9 @@ def main(args, outputs=None, workload_df: None|pd.DataFrame = None):
     prefill_weights = args.prefill_weights
     decode_weights = args.decode_weights
 
+    first_seconds_to_ignore = args.first_seconds_to_ignore
+    last_seconds_before_ignore = args.last_seconds_before_ignore
+
     if args.freq is not None:
         set_gpu_freq(args.freq)
     if args.skip_prefill is not None:
@@ -328,7 +333,7 @@ def main(args, outputs=None, workload_df: None|pd.DataFrame = None):
     
     if not get_skip_decode() and not is_model_runnable(model_type, TP_Decode, PP_decode):
         raise ValueError(
-            f"Model {model_type} is not runnable with TP={TP_Prefill}, PP={PP_prefill}. "
+            f"Model {model_type} is not runnable with TP={TP_Decode}, PP={PP_decode}. "
             f"Skipping by throwing exception..."
         )
     
@@ -437,7 +442,11 @@ def main(args, outputs=None, workload_df: None|pd.DataFrame = None):
             last = N * 3 // 4
             prefill_attainment = (per_request_latency_df['first_token_latency'][first:last] <= prefill_target).sum() / (last - first)
         else:
-            prefill_attainment = (per_request_latency_df['first_token_latency'] <= prefill_target).sum() / N
+            masked_request_latency = per_request_latency_df[
+                (per_request_latency_df['arrival_time'] >= first_seconds_to_ignore) & 
+                (per_request_latency_df['finish_time'] <= last_seconds_before_ignore)
+            ]
+            prefill_attainment = (masked_request_latency['first_token_latency'] <= prefill_target).mean()
         prefill_attainment *= 100
         item = [args.backend, model_type, 'prefill', rate, prefill_target, prefill_attainment,
                 TP_Prefill, PP_prefill, TP_Decode, PP_decode]
@@ -449,7 +458,11 @@ def main(args, outputs=None, workload_df: None|pd.DataFrame = None):
             last = N * 3 // 4
             decode_attainment = (per_request_latency_df['tpot'][first:last] <= decode_target).sum() / (last - first)
         else:
-            decode_attainment = (per_request_latency_df['tpot'] <= decode_target).sum() / N
+            masked_request_latency = per_request_latency_df[
+                (per_request_latency_df['arrival_time'] >= first_seconds_to_ignore) & 
+                (per_request_latency_df['finish_time'] <= last_seconds_before_ignore)
+            ]
+            decode_attainment = (masked_request_latency['tpot'] <= decode_target).mean()
         decode_attainment *= 100
         item = [args.backend, model_type, 'decode', rate, decode_target, decode_attainment,
                 TP_Prefill, PP_prefill, TP_Decode, PP_decode]
