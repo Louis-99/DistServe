@@ -443,8 +443,8 @@ def main(args, outputs=None, workload_df: None|pd.DataFrame = None):
             prefill_attainment = (per_request_latency_df['first_token_latency'][first:last] <= prefill_target).sum() / (last - first)
         else:
             masked_request_latency = per_request_latency_df[
-                (per_request_latency_df['arrival_time'] >= first_seconds_to_ignore) & 
-                (per_request_latency_df['finish_time'] <= last_seconds_before_ignore)
+                (per_request_latency_df['arrival_time'] >= 1000 * first_seconds_to_ignore) & 
+                (per_request_latency_df['finish_time'] <= 1000 * last_seconds_before_ignore)
             ]
             prefill_attainment = (masked_request_latency['first_token_latency'] <= prefill_target).mean()
         prefill_attainment *= 100
@@ -459,8 +459,8 @@ def main(args, outputs=None, workload_df: None|pd.DataFrame = None):
             decode_attainment = (per_request_latency_df['tpot'][first:last] <= decode_target).sum() / (last - first)
         else:
             masked_request_latency = per_request_latency_df[
-                (per_request_latency_df['arrival_time'] >= first_seconds_to_ignore) & 
-                (per_request_latency_df['finish_time'] <= last_seconds_before_ignore)
+                (per_request_latency_df['arrival_time'] >= 1000 * first_seconds_to_ignore) & 
+                (per_request_latency_df['finish_time'] <= 1000 * last_seconds_before_ignore)
             ]
             decode_attainment = (masked_request_latency['tpot'] <= decode_target).mean()
         decode_attainment *= 100
@@ -567,16 +567,20 @@ def main(args, outputs=None, workload_df: None|pd.DataFrame = None):
 
     prefill_containment = args.prefill_containment
     prefill_target = args.prefill_target
+    masked_request_latency = per_request_latency_df[
+        (per_request_latency_df['arrival_time'] >= 1000 * first_seconds_to_ignore) & 
+        (per_request_latency_df['finish_time'] <= 1000 * last_seconds_before_ignore)
+    ]
     if prefill_containment:
         # See if the P{prefill_containment} is less than prefill_target
-        t = per_request_latency_df['first_token_latency'].quantile(prefill_containment / 100)
+        t = masked_request_latency['first_token_latency'].quantile(prefill_containment / 100)
         is_prefill_contained = t < prefill_target
         pass
 
     decode_containment = args.decode_containment
     decode_target = args.decode_target
     if decode_containment:
-        t = per_request_latency_df['tpot'].quantile(decode_containment / 100)
+        t = masked_request_latency['tpot'].quantile(decode_containment / 100)
         is_decode_contained = t < decode_target
         pass
 
